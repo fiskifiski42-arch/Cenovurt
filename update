@@ -1,1 +1,91 @@
+# Optional: configure real test emails through Resend.
+RESEND_API_KEY=
+ALERT_FROM_EMAIL=Cenovurt <onboarding@resend.dev>
+
+node_modules
+.next
+out
+.env
+.env.local
+.vercel
+.DS_Store
+npm-debug.log*
+
+{
+  "name": "cenovurt",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "next": "^16.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.7.0"
+  }
+}
+
+# Cenovurt / Ценовърт
+
+Next.js приложение за следене на продуктови цени и тестови известия.
+
+## Стартиране локално
+
+```bash
+npm install
+npm run dev
+```
+
+## Vercel
+
+1. Качи съдържанието на проекта в GitHub repository.
+2. Във Vercel избери **Add New → Project → Import Git Repository**.
+3. Framework Preset: **Next.js**.
+4. Натисни **Deploy**.
+
+## Тестови email известия
+
+Без допълнителни настройки бутонът за тестов сигнал работи в симулационен режим.
+
+За реален тестов email добави във Vercel → Project → Settings → Environment Variables:
+
+- `RESEND_API_KEY`
+- `ALERT_FROM_EMAIL`
+
+Пример за `ALERT_FROM_EMAIL`:
+`Cenovurt <onboarding@resend.dev>`
+
+## Важно
+
+Тази версия е deploy-ready демо/MVP. Наблюденията се пазят в браузъра (localStorage).
+За реално автоматично ежедневно следене на цени са нужни постоянна база данни и сървърна проверка на магазините.
+
+{
+  "compilerOptions": {
+    "target": "ES2017",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": false,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "incremental": true,
+    "plugins": [{ "name": "next" }]
+  },
+  "include": ["next-env.d.ts", ".next/types/**/*.ts", "**/*.ts", "**/*.tsx"],
+  "exclude": ["node_modules"]
+}
 
