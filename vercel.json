@@ -1,6 +1,6 @@
 {
   "crons": [
-    { "path": "/api/check", "schedule": "17 * * * *" }
+    { "path": "/api/check", "schedule": "17 9 * * *" }
   ],
   "headers": [
     {
