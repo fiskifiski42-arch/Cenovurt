@@ -34,7 +34,7 @@ module.exports = async (req, res) => {
   if (!['GET', 'POST'].includes(req.method)) return json(res, 405, { error: 'Method not allowed' });
   try {
     const auth = String(req.headers.authorization || '');
-    if (process.env.CRON_SECRET && auth !== `Bearer ${process.env.CRON_SECRET}`) {
+    if (!process.env.CRON_SECRET || auth !== `Bearer ${process.env.CRON_SECRET}`) {
       return json(res, 401, { error: 'Unauthorized' });
     }
 

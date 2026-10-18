@@ -1,4 +1,4 @@
-const { json, normalizeEmail, validEmail, getAccount, getWatches } = require('./_lib');
+const { json, normalizeEmail, validEmail, getAccount, getWatches, effectivePlan } = require('./_lib');
 
 module.exports = async (req, res) => {
   if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
@@ -6,12 +6,14 @@ module.exports = async (req, res) => {
     const email = normalizeEmail(req.query?.email);
     if (!validEmail(email)) return json(res, 400, { error: 'Невалиден email.' });
     const [account, watches] = await Promise.all([getAccount(email), getWatches(email)]);
+    const plan = effectivePlan(account);
     return json(res, 200, {
       email,
-      plan: account?.plan || null,
-      limit: account?.limit || 0,
+      plan: plan.name,
+      limit: plan.limit,
       paidAt: account?.paidAt || null,
-      active: Boolean(account?.plan),
+      active: true,
+      paid: plan.paid,
       used: watches.length,
     });
   } catch (e) {

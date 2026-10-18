@@ -1,5 +1,7 @@
 const crypto = require('crypto');
 
+const FREE_PLAN = { name: 'Free', limit: 3 };
+
 const PLANS = {
   Basic: { name: 'Basic', price: 900, limit: 10 },
   Pro: { name: 'Pro', price: 1900, limit: 50 },
@@ -71,6 +73,12 @@ async function getJSON(key, fallback = null) {
 
 async function setJSON(key, value) {
   await redis('SET', key, JSON.stringify(value));
+}
+
+function effectivePlan(account) {
+  const name = account?.plan;
+  if (name && PLANS[name]) return { name, limit: PLANS[name].limit, paid: true };
+  return { ...FREE_PLAN, paid: false };
 }
 
 async function getAccount(email) {
@@ -204,7 +212,7 @@ async function fetchProductPrice(url) {
 }
 
 module.exports = {
-  PLANS, json, normalizeEmail, validEmail, validUrl, parseBody,
+  PLANS, FREE_PLAN, effectivePlan, json, normalizeEmail, validEmail, validUrl, parseBody,
   redis, getJSON, setJSON, getAccount, setAccount, getWatches, setWatches,
   randomId, stripeRequest, sendEmail, escapeHtml, fetchProductPrice,
 };

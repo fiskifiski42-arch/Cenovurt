@@ -1,6 +1,6 @@
 const {
   json, parseBody, normalizeEmail, validEmail, validUrl,
-  getAccount, getWatches, setWatches, randomId,
+  getAccount, getWatches, setWatches, randomId, effectivePlan,
 } = require('./_lib');
 
 module.exports = async (req, res) => {
@@ -22,10 +22,10 @@ module.exports = async (req, res) => {
       if (!Number.isFinite(targetPrice) || targetPrice <= 0) return json(res, 400, { error: 'Невалидна прагова цена.' });
 
       const account = await getAccount(email);
-      if (!account?.plan) return json(res, 402, { error: 'Първо избери и плати пакет.' });
+      const plan = effectivePlan(account);
       const watches = await getWatches(email);
-      if (watches.length >= account.limit) {
-        return json(res, 409, { error: `Достигнат е лимитът на пакет ${account.plan}: ${account.limit} продукта.` });
+      if (watches.length >= plan.limit) {
+        return json(res, 409, { error: `Достигнат е лимитът на пакет ${plan.name}: ${plan.limit} продукта. Избери по-голям пакет за още наблюдения.` });
       }
       const item = {
         id: randomId(), url, targetPrice, email,
@@ -35,7 +35,7 @@ module.exports = async (req, res) => {
       };
       watches.unshift(item);
       await setWatches(email, watches);
-      return json(res, 201, { watch: item, used: watches.length, limit: account.limit });
+      return json(res, 201, { watch: item, used: watches.length, limit: plan.limit });
     }
 
     if (req.method === 'DELETE') {
