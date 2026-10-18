@@ -54,7 +54,8 @@ module.exports = async (req, res) => {
         results.push(...await Promise.all(chunk.map((w) => processWatch(email, w))));
       }
       const byId = new Map(results.map((r) => [r.updated.id, r.updated]));
-      const next = watches.map((w) => byId.get(w.id) || w);
+      const latest = await getWatches(email);
+      const next = latest.map((w) => byId.has(w.id) ? { ...w, ...byId.get(w.id) } : w);
       await setWatches(email, next);
       checked += results.length;
       notified += results.filter((r) => r.notified).length;
@@ -66,3 +67,6 @@ module.exports = async (req, res) => {
     return json(res, e.code === 'MISSING_ENV' ? 503 : 500, { error: e.message });
   }
 };
+
+// Reuse the same notification rules for a manual check.
+module.exports.processWatch = processWatch;
