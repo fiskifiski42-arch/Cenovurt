@@ -1,8 +1,11 @@
+const { tokenEmail } = require('./_auth');
 const { PLANS, json, stripeRequest, normalizeEmail, validEmail, setAccount, getAccount } = require('./_lib');
 
 module.exports = async (req, res) => {
   if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
   try {
+    const owner = tokenEmail(req);
+    if (!owner) return json(res, 401, { error: 'Първо потвърди имейла си с код.' });
     const id = String(req.query?.session_id || '').trim();
     if (!id.startsWith('cs_')) return json(res, 400, { error: 'Невалидна Stripe сесия.' });
     const session = await stripeRequest(`/v1/checkout/sessions/${encodeURIComponent(id)}`);
@@ -10,6 +13,7 @@ module.exports = async (req, res) => {
       return json(res, 402, { error: 'Плащането още не е потвърдено.' });
     }
     const email = normalizeEmail(session.customer_details?.email || session.customer_email || session.metadata?.email);
+    if (email !== owner) return json(res, 403, { error: 'Плащането е към друг имейл.' });
     const plan = PLANS[session.metadata?.plan];
     if (!validEmail(email) || !plan) return json(res, 400, { error: 'Липсват данни за пакет или email.' });
 
