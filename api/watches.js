@@ -19,11 +19,12 @@ module.exports = async (req, res) => {
       const targetPrice = Number(String(body.targetPrice || '').replace(',', '.'));
       if (!validEmail(email)) return json(res, 400, { error: 'Невалиден email.' });
       if (!validUrl(url)) return json(res, 400, { error: 'Постави пълен http/https линк.' });
-      if (!Number.isFinite(targetPrice) || targetPrice <= 0) return json(res, 400, { error: 'Невалидна прагова цена.' });
+      if (!Number.isFinite(targetPrice) || targetPrice <= 0 || targetPrice > 100000000) return json(res, 400, { error: 'Невалидна прагова цена.' });
 
       const account = await getAccount(email);
       const plan = effectivePlan(account);
       const watches = await getWatches(email);
+      if (watches.some(w => w.url === url)) return json(res, 409, { error: 'Вече наблюдаваш този продукт.' });
       if (watches.length >= plan.limit) {
         return json(res, 409, { error: `Достигнат е лимитът на пакет ${plan.name}: ${plan.limit} продукта. Избери по-голям пакет за още наблюдения.` });
       }
