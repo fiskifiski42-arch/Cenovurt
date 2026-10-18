@@ -1,3 +1,4 @@
+const { isOwner } = require('./_auth');
 const { PLANS, json, parseBody, normalizeEmail, validEmail, stripeRequest } = require('./_lib');
 
 module.exports = async (req, res) => {
@@ -7,6 +8,7 @@ module.exports = async (req, res) => {
     const email = normalizeEmail(body.email);
     const plan = PLANS[body.plan];
     if (!validEmail(email)) return json(res, 400, { error: 'Въведи валиден email.' });
+    if (!isOwner(req, email)) return json(res, 401, { error: 'Първо потвърди имейла си с код.' });
     if (!plan) return json(res, 400, { error: 'Невалиден пакет.' });
 
     const origin = process.env.APP_URL || `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers['x-forwarded-host'] || req.headers.host}`;
