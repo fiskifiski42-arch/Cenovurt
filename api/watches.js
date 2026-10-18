@@ -1,3 +1,4 @@
+const { isOwner } = require('./_auth');
 const {
   json, parseBody, normalizeEmail, validEmail, validUrl,
   getAccount, getWatches, setWatches, randomId, effectivePlan,
@@ -8,6 +9,7 @@ module.exports = async (req, res) => {
     if (req.method === 'GET') {
       const email = normalizeEmail(req.query?.email);
       if (!validEmail(email)) return json(res, 400, { error: 'Невалиден email.' });
+      if (!isOwner(req, email)) return json(res, 401, { error: 'Първо потвърди имейла си с код.' });
       const watches = await getWatches(email);
       return json(res, 200, { watches });
     }
@@ -18,6 +20,7 @@ module.exports = async (req, res) => {
       const url = String(body.url || '').trim();
       const targetPrice = Number(String(body.targetPrice || '').replace(',', '.'));
       if (!validEmail(email)) return json(res, 400, { error: 'Невалиден email.' });
+      if (!isOwner(req, email)) return json(res, 401, { error: 'Първо потвърди имейла си с код.' });
       if (!validUrl(url)) return json(res, 400, { error: 'Постави пълен http/https линк.' });
       if (!Number.isFinite(targetPrice) || targetPrice <= 0 || targetPrice > 100000000) return json(res, 400, { error: 'Невалидна прагова цена.' });
 
@@ -43,6 +46,7 @@ module.exports = async (req, res) => {
       const email = normalizeEmail(req.query?.email);
       const id = String(req.query?.id || '').trim();
       if (!validEmail(email) || !id) return json(res, 400, { error: 'Липсват email или id.' });
+      if (!isOwner(req, email)) return json(res, 401, { error: 'Първо потвърди имейла си с код.' });
       const watches = await getWatches(email);
       const next = watches.filter((w) => w.id !== id);
       await setWatches(email, next);
