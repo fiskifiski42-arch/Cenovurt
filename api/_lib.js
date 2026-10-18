@@ -23,11 +23,48 @@ function validEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeEmail(email));
 }
 
+const net = require('node:net');
+const dns = require('node:dns').promises;
+
+function productURL(value) {
+  const u = new URL(String(value || '').trim());
+  const host = u.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  if (!['http:', 'https:'].includes(u.protocol) || u.username || u.password ||
+      u.href.length > 2048 || u.port ||
+      !host.includes('.') || net.isIP(host) ||
+      /\.(?:localhost|local|internal|test|invalid|example)$/.test(host)) {
+    throw new Error('Приемат се само публични http/https линкове към магазини.');
+  }
+  return u;
+}
+
 function validUrl(value) {
-  try {
-    const u = new URL(String(value || '').trim());
-    return ['http:', 'https:'].includes(u.protocol);
-  } catch { return false; }
+  try { productURL(value); return true; } catch { return false; }
+}
+
+function publicIP(ip) {
+  if (net.isIP(ip) === 6) {
+    const v = ip.toLowerCase();
+    return !(v === '::1' || v === '::' || v.startsWith('::ffff:') ||
+      /^(?:fc|fd|fe8|fe9|fea|feb)/.test(v));
+  }
+  if (net.isIP(ip) !== 4) return false;
+  const p = ip.split('.').map(Number);
+  return !(p[0] === 0 || p[0] === 10 || p[0] === 127 || p[0] >= 224 ||
+    (p[0] === 169 && p[1] === 254) ||
+    (p[0] === 172 && p[1] >= 16 && p[1] <= 31) ||
+    (p[0] === 192 && (p[1] === 168 || p[1] === 0)) ||
+    (p[0] === 100 && p[1] >= 64 && p[1] <= 127) ||
+    (p[0] === 198 && (p[1] === 18 || p[1] === 19)));
+}
+
+async function safeProductURL(value) {
+  const parsed = productURL(value);
+  const records = await dns.lookup(parsed.hostname, { all: true });
+  if (!records.length || records.some(r => !publicIP(r.address))) {
+    throw new Error('Линкът сочи към непубличен адрес.');
+  }
+  return parsed;
 }
 
 async function parseBody(req) {
@@ -190,25 +227,48 @@ function extractPrice(html) {
 
 async function fetchProductPrice(url) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
+  const timeout = setTimeout(() => controller.abort(), 10000);
   try {
-    const r = await fetch(url, {
-      redirect: 'follow',
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; CenovurtPriceBot/1.0; +https://cenovurt.vercel.app)',
-        'Accept': 'text/html,application/xhtml+xml',
-        'Accept-Language': 'bg-BG,bg;q=0.9,en;q=0.8',
-      },
-    });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    const html = await r.text();
-    const price = extractPrice(html);
-    if (!price) throw new Error('Цена не беше открита автоматично');
-    return price;
-  } finally {
-    clearTimeout(timeout);
-  }
+    let current = productURL(url);
+    for (let hop = 0; hop <= 5; hop++) {
+      await safeProductURL(current.href);
+      const r = await fetch(current.href, {
+        redirect: 'manual',
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; CenovurtPriceBot/1.1)',
+          'Accept': 'text/html,application/xhtml+xml',
+          'Accept-Language': 'bg-BG,bg;q=0.9,en;q=0.8'
+        }
+      });
+      if (r.status >= 300 && r.status < 400) {
+        const dest = r.headers.get('location');
+        if (!dest) throw new Error('Сайтът пренасочва без валиден адрес.');
+        current = productURL(new URL(dest, current).href);
+        continue;
+      }
+      if (r.status === 403 || r.status === 429) {
+        throw new Error('Магазинът блокира автоматичните проверки (HTTP ' + r.status + ').');
+      }
+      if (!r.ok) throw new Error('Магазинът върна HTTP ' + r.status + '.');
+      const type = r.headers.get('content-type') || '';
+      if (type && !/text\/html|application\/xhtml\+xml/i.test(type)) {
+        throw new Error('Адресът не връща HTML страница на продукт.');
+      }
+      if (Number(r.headers.get('content-length') || 0) > 3000000) {
+        throw new Error('Страницата е прекалено голяма.');
+      }
+      const html = await r.text();
+      if (html.length > 3000000) throw new Error('Страницата е прекалено голяма.');
+      const price = extractPrice(html);
+      if (!price) throw new Error('Не открих надеждна цена за този продукт.');
+      return price;
+    }
+    throw new Error('Прекалено много пренасочвания от магазина.');
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error('Магазинът не отговори до 10 секунди.');
+    throw e;
+  } finally { clearTimeout(timeout); }
 }
 
 module.exports = {
