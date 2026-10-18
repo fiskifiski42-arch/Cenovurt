@@ -83,7 +83,15 @@
         <article class="plan"><h3>Free</h3><div class="for">За тест и проследяване на важни покупки.</div><div class="plan-price">€0 <small>без карта</small></div><ul><li>До 3 наблюдавани продукта</li><li>Автоматична ежедневна проверка</li><li>Email сигнали (при настроен Resend)</li><li>Ръчна проверка</li></ul><button class="secondary" type="button" onclick="startFree()">Започни безплатно</button></article>
         <article class="plan"><h3>Basic</h3><div class="for">За лично ползване и няколко важни покупки.</div><div class="plan-price">€9 <small>еднократно</small></div><ul><li>До 10 наблюдавани продукта</li><li>Автоматична ежедневна проверка</li><li>Email сигнали</li><li>Ръчна проверка</li></ul><button class="secondary" type="button" onclick="buyPlan('Basic')">Купи Basic</button></article>
         <article class="plan featured"><div class="plan-badge">Най-популярен</div><h3>Pro</h3><div class="for">За хора, които следят повече оферти.</div><div class="plan-price">€19 <small>еднократно</small></div><ul><li>До 50 наблюдавани продукта</li><li>Всичко от Basic</li><li>Повече активни наблюдения</li><li>Бъдещи функционални ъпдейти</li></ul><button class="primary" type="button" onclick="buyPlan('Pro')">Купи Pro</button></article>
-        <article class="plan"><h3>Business</h3><div class="for">За по-сериозно следене и малък бизнес.</div><div class="plan-price">€39 <small>еднократно</small></div><ul><li>До 200 наблюдавани продукта</li><li>Всичко от Pro</li><li>Подходящ за по-големи списъци</li><li>Приоритет за нови функции</li><
+        <article class="plan"><h3>Business</h3><div class="for">За по-сериозно следене и малък бизнес.</div><div class="plan-price">€39 <small>еднократно</small></div><ul><li>До 200 наблюдавани продукта</li><li>Всичко от Pro</li><li>Подходящ за по-големи списъци</li><li>Приоритет за нови функции</li></ul><button class="secondary" type="button" onclick="buyPlan('Business')">Купи Business</button></article>
+      </div>
+      <div class="plan-note">Плащането се обработва от Stripe. След успешно плащане профилът се активира автоматично.</div>
+    </section>
+
+    <footer>Ценовърт · финална Vercel версия</footer>
+  </main>
+
+<script>
   let account=null,watches=[];
   let sessionToken=localStorage.getItem('cenovurt-session')||'';
   const $=id=>document.getElementById(id);
@@ -172,7 +180,7 @@
     const q=new URLSearchParams(location.search); const sid=q.get('session_id'); const state=q.get('payment');
     if(state==='cancelled'){show('Плащането е отказано. Нищо не е таксувано.',true); history.replaceState({},'',location.pathname); return}
     if(state==='success'&&sid){
-      if(!sessionToken){show('Първо потвърди имейла си, за да активирам плащането.',true);return}
+      if(!sessionToken){show('Потвърди имейла си, за да активирам плащането.',true);return}
       show('Потвърждавам плащането…',false,true);
       try{const d=await api(`/api/verify-session?session_id=${encodeURIComponent(sid)}`); emailEl.value=d.email; localStorage.setItem('cenovurt-email',d.email); history.replaceState({},'',location.pathname); await loadAccount(false); show(`Готово — пакет ${d.plan} е активиран. Лимит: ${d.limit} продукта.`)}catch(e){show(e.message,true)}
     }
@@ -193,10 +201,6 @@
   function scrollToPricing(){document.getElementById('pricing').scrollIntoView({behavior:'smooth'})}
 
   verifyPayment().then(()=>{if(!new URLSearchParams(location.search).get('session_id') && saved && sessionToken) loadAccount(false)});
-body:JSON.stringify({email})}); show(`Тестовият email е изпратен до ${email}.`)}catch(e){show(e.message,true)}}
-  function scrollToPricing(){document.getElementById('pricing').scrollIntoView({behavior:'smooth'})}
-
-  verifyPayment().then(()=>{if(!new URLSearchParams(location.search).get('session_id') && saved) loadAccount(false)});
 </script>
 </body>
 </html>
