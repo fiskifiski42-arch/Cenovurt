@@ -1,3 +1,4 @@
+const { isOwner } = require('./_auth');
 const { json, normalizeEmail, validEmail, getAccount, getWatches, effectivePlan } = require('./_lib');
 
 module.exports = async (req, res) => {
@@ -5,6 +6,7 @@ module.exports = async (req, res) => {
   try {
     const email = normalizeEmail(req.query?.email);
     if (!validEmail(email)) return json(res, 400, { error: 'Невалиден email.' });
+    if (!isOwner(req, email)) return json(res, 401, { error: 'Първо потвърди имейла си с код.' });
     const [account, watches] = await Promise.all([getAccount(email), getWatches(email)]);
     const plan = effectivePlan(account);
     return json(res, 200, {
