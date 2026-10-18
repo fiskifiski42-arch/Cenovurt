@@ -1,3 +1,4 @@
+const { isOwner } = require('./_auth');
 const { json, parseBody, normalizeEmail, validEmail, getAccount, effectivePlan, redis, sendEmail, escapeHtml } = require('./_lib');
 
 module.exports = async (req, res) => {
@@ -6,6 +7,7 @@ module.exports = async (req, res) => {
     const body = await parseBody(req);
     const email = normalizeEmail(body.email);
     if (!validEmail(email)) return json(res, 400, { error: 'Невалиден email.' });
+    if (!isOwner(req, email)) return json(res, 401, { error: 'Първо потвърди имейла си с код.' });
     const account = await getAccount(email);
     const plan = effectivePlan(account);
 
