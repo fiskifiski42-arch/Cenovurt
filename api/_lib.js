@@ -208,19 +208,67 @@ function parsePriceText(text) {
 }
 
 function extractPrice(html) {
-  const patterns = [
-    /<meta[^>]+(?:property|itemprop|name)=["'](?:product:price:amount|price|og:price:amount)["'][^>]+content=["']([^"']+)["'][^>]*>/i,
-    /<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|itemprop|name)=["'](?:product:price:amount|price|og:price:amount)["'][^>]*>/i,
-    /["']price["']\s*:\s*["']?([0-9][0-9\s.,]*)["']?/i,
-    /["']lowPrice["']\s*:\s*["']?([0-9][0-9\s.,]*)["']?/i,
-    /(?:price|цена)[^0-9]{0,35}([0-9][0-9\s.,]{1,18})\s*(?:€|EUR|лв\.?|BGN)/i,
-  ];
-  for (const p of patterns) {
-    const m = html.match(p);
-    if (m) {
-      const n = parsePriceText(m[1]);
-      if (n) return n;
+  if (typeof html !== 'string' || !html) return null;
+  const parseAttributes = tag => {
+    const attrs = {};
+    for (const match of tag.matchAll(/([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) {
+      attrs[match[1].toLowerCase()] = match[2] ?? match[3];
     }
+    return attrs;
+  };
+  const eur = (value, currency = 'EUR') => {
+    const amount = parsePriceText(value);
+    if (!amount) return null;
+    const unit = String(currency).trim().toUpperCase();
+    if (unit === 'BGN' || unit === 'ЛВ' || unit === 'ЛВ.') {
+      return Math.round(amount / 1.95583 * 100) / 100;
+    }
+    return unit === 'EUR' || unit === '€' ? amount : null;
+  };
+  const metas = [...html.matchAll(/<meta\b[^>]*>/gi)].map(m => parseAttributes(m[0]));
+  const metaName = m => String(m.property || m.itemprop || m.name || '').toLowerCase();
+  const curr = metas.find(m => ['product:price:currency','og:price:currency','pricecurrency'].includes(metaName(m)));
+  const currency = curr?.content || 'EUR';
+  for (const m of metas) {
+    if (['product:price:amount','og:price:amount','price'].includes(metaName(m))) {
+      const value = eur(m.content, currency);
+      if (value) return value;
+    }
+  }
+
+  const priceInOffer = offer => {
+    if (Array.isArray(offer)) {
+      for (const item of offer) { const v = priceInOffer(item); if (v) return v; }
+      return null;
+    }
+    if (!offer || typeof offer !== 'object') return null;
+    const amount = offer.price ?? offer.lowPrice ?? offer.priceSpecification?.price;
+    const unit = offer.priceCurrency ?? offer.priceSpecification?.priceCurrency ?? 'EUR';
+    return eur(amount, unit);
+  };
+  const scan = data => {
+    if (Array.isArray(data)) {
+      for (const item of data) { const v = scan(item); if (v) return v; }
+      return null;
+    }
+    if (!data || typeof data !== 'object') return null;
+    const types = Array.isArray(data['@type']) ? data['@type'] : [data['@type']];
+    if (types.some(type => /^(?:Product|Offer|AggregateOffer)$/i.test(String(type)))) {
+      const v = priceInOffer(data.offers || data);
+      if (v) return v;
+    }
+    return scan(data['@graph']);
+  };
+  for (const match of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
+    if (!/\btype\s*=\s*["']application\/ld\+json["']/i.test(match[1])) continue;
+    try { const v = scan(JSON.parse(match[2].trim())); if (v) return v; } catch {}
+  }
+
+  // Only currency-labelled amounts are accepted as fallback. Unknown values are not guessed.
+  for (const match of html.matchAll(/(?:цена|price)\s*[:=]?\s*[^<>\n]{0,30}?([0-9][0-9\s.,]{0,16})\s*(€|EUR|лв\.?|BGN)/gi)) {
+    const unit = /^лв/i.test(match[2]) ? 'BGN' : match[2];
+    const v = eur(match[1], unit);
+    if (v) return v;
   }
   return null;
 }
@@ -274,5 +322,5 @@ async function fetchProductPrice(url) {
 module.exports = {
   PLANS, FREE_PLAN, effectivePlan, json, normalizeEmail, validEmail, validUrl, parseBody,
   redis, getJSON, setJSON, getAccount, setAccount, getWatches, setWatches,
-  randomId, stripeRequest, sendEmail, escapeHtml, fetchProductPrice,
+  randomId, stripeRequest, sendEmail, escapeHtml, fetchProductPrice, extractPrice,
 };
