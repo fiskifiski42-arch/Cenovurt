@@ -4,6 +4,8 @@ const path = require('node:path');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
+process.env.CRON_SECRET = 'test-only-sample-secret-long-enough-2026';
+const { issueToken } = require('../api/_auth.js');
 const libPath = path.join(__dirname, '../api/_lib.js');
 const lib = require(libPath);
 const watchesByEmail = new Map();
@@ -27,7 +29,8 @@ async function call(handler, method, body, query) {
   let status;
   let result;
   const res = { setHeader:()=>{}, end: s=> {result=JSON.parse(s); }, set statusCode(v) { status=v; } };
-  const req = {method, body, query};
+  const email = body?.email || query?.email || 'new@example.com';
+  const req = {method, body, query, headers:{authorization:'Bearer '+issueToken(email)}};
   await handler(req, res);
   return {status,result};
 }
