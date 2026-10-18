@@ -273,18 +273,41 @@ function extractPrice(html) {
   return null;
 }
 
-async function fetchProductPrice(url) {
+// Remove advertising tracking that should not affect product identity or price.
+function cleanProductURL(value) {
+  const parsed = productURL(value);
+  for (const key of [...parsed.searchParams.keys()]) {
+    if (/^(utm_.*|gclid|fbclid|msclkid)$/i.test(key)) parsed.searchParams.delete(key);
+  }
+  parsed.hash = '';
+  return parsed;
+}
+
+function priceFromHtml(html) {
+  if (typeof html !== 'string' || html.length > 3000000) {
+    throw new Error('Страницата е прекалено голяма или невалидна.');
+  }
+  const price = extractPrice(html);
+  if (!price) {
+    const err = new Error('Не открих надеждна цена за този продукт.');
+    err.code = 'NO_PRICE';
+    throw err;
+  }
+  return price;
+}
+
+async function directProductPrice(url) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10000);
+  const timeout = setTimeout(() => controller.abort(), 9000);
   try {
-    let current = productURL(url);
+    let current = cleanProductURL(url);
     for (let hop = 0; hop <= 5; hop++) {
       await safeProductURL(current.href);
       const r = await fetch(current.href, {
         redirect: 'manual',
         signal: controller.signal,
         headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; CenovurtPriceBot/1.1)',
+          'User-Agent': 'Cenovurt/1.2 (+price monitoring; contact site owner for data access)',
           'Accept': 'text/html,application/xhtml+xml',
           'Accept-Language': 'bg-BG,bg;q=0.9,en;q=0.8'
         }
@@ -292,11 +315,13 @@ async function fetchProductPrice(url) {
       if (r.status >= 300 && r.status < 400) {
         const dest = r.headers.get('location');
         if (!dest) throw new Error('Сайтът пренасочва без валиден адрес.');
-        current = productURL(new URL(dest, current).href);
+        current = cleanProductURL(new URL(dest, current).href);
         continue;
       }
       if (r.status === 403 || r.status === 429) {
-        throw new Error('Магазинът блокира автоматичните проверки (HTTP ' + r.status + ').');
+        const err = new Error('Магазинът блокира автоматичните проверки (HTTP ' + r.status + ').');
+        err.code = 'BOT_BLOCKED';
+        throw err;
       }
       if (!r.ok) throw new Error('Магазинът върна HTTP ' + r.status + '.');
       const type = r.headers.get('content-type') || '';
@@ -306,17 +331,66 @@ async function fetchProductPrice(url) {
       if (Number(r.headers.get('content-length') || 0) > 3000000) {
         throw new Error('Страницата е прекалено голяма.');
       }
-      const html = await r.text();
-      if (html.length > 3000000) throw new Error('Страницата е прекалено голяма.');
-      const price = extractPrice(html);
-      if (!price) throw new Error('Не открих надеждна цена за този продукт.');
-      return price;
+      return priceFromHtml(await r.text());
     }
     throw new Error('Прекалено много пренасочвания от магазина.');
   } catch (e) {
-    if (e.name === 'AbortError') throw new Error('Магазинът не отговори до 10 секунди.');
+    if (e.name === 'AbortError') {
+      const err = new Error('Магазинът не отговори до 9 секунди.');
+      err.code = 'SOURCE_TIMEOUT';
+      throw err;
+    }
     throw e;
   } finally { clearTimeout(timeout); }
+}
+
+// Optional server-side source for sites that do not serve HTML to Vercel.
+// Its key is held only in Vercel Environment Variables and is never returned to the browser.
+async function zenRowsProductPrice(url) {
+  const key = (process.env.ZENROWS_API_KEY || '').trim();
+  if (!key) throw new Error('Резервният доставчик не е настроен (ZENROWS_API_KEY).');
+  const target = cleanProductURL(url);
+  await safeProductURL(target.href);
+  const endpoint = new URL('https://api.zenrows.com/v1/');
+  endpoint.searchParams.set('apikey', key);
+  endpoint.searchParams.set('url', target.href);
+  endpoint.searchParams.set('js_render', 'true');
+  endpoint.searchParams.set('premium_proxy', 'true');
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 22000);
+  try {
+    const r = await fetch(endpoint.href, { redirect: 'manual', signal: controller.signal });
+    if (r.status === 401 || r.status === 403) throw new Error('ZenRows: провери API ключа и достъпа си.');
+    if (r.status === 402 || r.status === 429) throw new Error('ZenRows: няма налични кредити или е достигнат лимитът.');
+    if (!r.ok) throw new Error('ZenRows не успя да отвори страницата (HTTP ' + r.status + ').');
+    const type = r.headers.get('content-type') || '';
+    if (type && !/text\/html|application\/xhtml\+xml/i.test(type)) {
+      throw new Error('ZenRows не върна HTML страница.');
+    }
+    if (Number(r.headers.get('content-length') || 0) > 3000000) {
+      throw new Error('Страницата е прекалено голяма.');
+    }
+    return priceFromHtml(await r.text());
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error('ZenRows не отговори до 22 секунди.');
+    throw e;
+  } finally { clearTimeout(timeout); }
+}
+
+async function fetchProductPrice(url) {
+  try {
+    return await directProductPrice(url);
+  } catch (err) {
+    // Do not spend provider credits on nonexistent pages or invalid links.
+    if (!['BOT_BLOCKED', 'NO_PRICE', 'SOURCE_TIMEOUT'].includes(err.code)) throw err;
+    if (!process.env.ZENROWS_API_KEY) {
+      if (err.code === 'BOT_BLOCKED') {
+        throw new Error(err.message + ' Добави ZENROWS_API_KEY във Vercel за резервна проверка.');
+      }
+      throw err;
+    }
+    return zenRowsProductPrice(url);
+  }
 }
 
 module.exports = {
