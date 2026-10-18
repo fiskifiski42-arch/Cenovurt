@@ -101,7 +101,7 @@
   function money(v){return new Intl.NumberFormat('bg-BG',{style:'currency',currency:'EUR',maximumFractionDigits:2}).format(v)}
   function host(url){try{return new URL(url).hostname.replace(/^www\./,'')}catch{return 'Продукт'}}
   function esc(v){return String(v??'').replace(/[&<>'"\u0060]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;','\u0060':'&#96;'}[c]))}
-  function show(text,err=false,info=false){$('message').innerHTML=text?`<div class="notice ${err?'err':info?'info':''}">${text}</div>`:''}
+  function show(text,err=false,info=false){const box=$('message');box.textContent='';if(!text)return;const n=document.createElement('div');n.className='notice '+(err?'err':info?'info':'');n.textContent=String(text);box.appendChild(n)}
   function currentEmail(){const e=normalizeEmail(emailEl.value); if(validEmail(e)) localStorage.setItem('cenovurt-email',e); return e}
   async function api(path,opts={}){const r=await fetch(path,{headers:{'Content-Type':'application/json',...(opts.headers||{})},...opts}); const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d.error||`Грешка ${r.status}`); return d}
 
@@ -116,8 +116,9 @@
     $('count').textContent=`${watches.length} активни`;
     if(!watches.length){$('list').innerHTML='<div class="empty">Още няма добавени продукти.</div>';return}
     $('list').innerHTML='<div class="grid">'+watches.map(w=>{
+      const checkedAt=w.lastCheckedAt?' · Проверено: '+new Date(w.lastCheckedAt).toLocaleString('bg-BG'):'';
       const status=w.lastError?`<span class="status-bad">Последна проверка: ${esc(w.lastError)}</span>`:w.lastPrice?`<span class="status-good">Последна цена: ${money(w.lastPrice)}</span>`:'Все още няма успешна проверка';
-      return `<article class="watch"><h3>${esc(host(w.url))}</h3><a class="url" href="${esc(w.url)}" target="_blank" rel="noopener noreferrer">${esc(w.url)}</a><div class="price">Праг ${money(w.targetPrice)}</div><div class="meta">${status}</div><div class="meta">Автоматична проверка: веднъж дневно</div><div class="actions"><button class="secondary small" onclick="checkOne('${w.id}')">Провери сега</button><a class="secondary small" style="text-align:center;text-decoration:none" href="${esc(w.url)}" target="_blank" rel="noopener noreferrer">Отвори</a><button class="danger small" onclick="removeWatch('${w.id}')">Премахни</button></div></article>`
+      return `<article class="watch"><h3>${esc(host(w.url))}</h3><a class="url" href="${esc(w.url)}" target="_blank" rel="noopener noreferrer">${esc(w.url)}</a><div class="price">Праг ${money(w.targetPrice)}</div><div class="meta">${status}${esc(checkedAt)}</div><div class="meta">Автоматична проверка: веднъж дневно</div><div class="actions"><button class="secondary small" onclick="checkOne('${w.id}')">Провери сега</button><a class="secondary small" style="text-align:center;text-decoration:none" href="${esc(w.url)}" target="_blank" rel="noopener noreferrer">Отвори</a><button class="danger small" onclick="removeWatch('${w.id}')">Премахни</button></div></article>`
     }).join('')+'</div>';
   }
 
@@ -127,7 +128,7 @@
     try{
       const [a,w]=await Promise.all([api(`/api/account?email=${encodeURIComponent(email)}`),api(`/api/watches?email=${encodeURIComponent(email)}`)]);
       account=a; watches=w.watches||[]; renderAccount(); renderWatches();
-      if(verbose) show(`Активен план <strong>${account.plan}</strong> · ${account.used}/${account.limit} продукта. ${account.paid?'':'Безплатен достъп, без карта.'}`,false,true);
+      if(verbose) show(`Активен план ${account.plan} · ${account.used}/${account.limit} продукта. ${account.paid?'':'Безплатен достъп, без карта.'}`,false,true);
     }catch(e){show(e.message,true)}
   }
 
@@ -150,7 +151,7 @@
     if(state==='cancelled'){show('Плащането е отказано. Нищо не е таксувано.',true); history.replaceState({},'',location.pathname); return}
     if(state==='success'&&sid){
       show('Потвърждавам плащането…',false,true);
-      try{const d=await api(`/api/verify-session?session_id=${encodeURIComponent(sid)}`); emailEl.value=d.email; localStorage.setItem('cenovurt-email',d.email); history.replaceState({},'',location.pathname); await loadAccount(false); show(`Готово — пакет <strong>${d.plan}</strong> е активиран. Лимит: ${d.limit} продукта.`)}catch(e){show(e.message,true)}
+      try{const d=await api(`/api/verify-session?session_id=${encodeURIComponent(sid)}`); emailEl.value=d.email; localStorage.setItem('cenovurt-email',d.email); history.replaceState({},'',location.pathname); await loadAccount(false); show(`Готово — пакет ${d.plan} е активиран. Лимит: ${d.limit} продукта.`)}catch(e){show(e.message,true)}
     }
   }
 
@@ -163,8 +164,8 @@
   });
 
   async function removeWatch(id){const email=currentEmail(); try{await api(`/api/watches?email=${encodeURIComponent(email)}&id=${encodeURIComponent(id)}`,{method:'DELETE'}); await loadAccount(false); show('Наблюдението е премахнато.')}catch(e){show(e.message,true)}}
-  async function checkOne(id){const email=currentEmail(); show('Проверявам текущата цена…',false,true); try{const d=await api('/api/check-one',{method:'POST',body:JSON.stringify({email,id})}); await loadAccount(false); show(d.hit?`Цената е <strong>${money(d.price)}</strong> — под твоя праг.`:`Текуща цена: <strong>${money(d.price)}</strong>. Все още е над прага.`)}catch(e){await loadAccount(false); show(e.message,true)}}
-  async function sendTestEmail(){const email=currentEmail(); if(!validEmail(email)) return show('Въведи валиден email.',true); show('Изпращам тестов email…',false,true); try{await api('/api/test-alert',{method:'POST',body:JSON.stringify({email})}); show(`Тестовият email е изпратен до <strong>${email}</strong>.`)}catch(e){show(e.message,true)}}
+  async function checkOne(id){const email=currentEmail(); show('Проверявам текущата цена…',false,true); try{const d=await api('/api/check-one',{method:'POST',body:JSON.stringify({email,id})}); await loadAccount(false); show(d.hit ? 'Цената е '+money(d.price)+' — под твоя праг. '+(d.notified?'Изпратих email известие.':'Без ново известие — вече е изпращан сигнал.') : 'Текуща цена: '+money(d.price)+'. Все още е над прага.')}catch(e){await loadAccount(false); show(e.message,true)}}
+  async function sendTestEmail(){const email=currentEmail(); if(!validEmail(email)) return show('Въведи валиден email.',true); show('Изпращам тестов email…',false,true); try{await api('/api/test-alert',{method:'POST',body:JSON.stringify({email})}); show(`Тестовият email е изпратен до ${email}.`)}catch(e){show(e.message,true)}}
   function scrollToPricing(){document.getElementById('pricing').scrollIntoView({behavior:'smooth'})}
 
   verifyPayment().then(()=>{if(!new URLSearchParams(location.search).get('session_id') && saved) loadAccount(false)});
