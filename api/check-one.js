@@ -1,3 +1,4 @@
+const { isOwner } = require('./_auth');
 const { json, parseBody, normalizeEmail, validEmail, getWatches, setWatches } = require('./_lib');
 const { processWatch } = require('./check');
 
@@ -8,6 +9,7 @@ module.exports = async (req, res) => {
     const email = normalizeEmail(body.email);
     const id = String(body.id || '').trim();
     if (!validEmail(email) || !id) return json(res, 400, { error: 'Липсват email или наблюдение.' });
+    if (!isOwner(req, email)) return json(res, 401, { error: 'Първо потвърди имейла си с код.' });
     const watches = await getWatches(email);
     const watch = watches.find((w) => w.id === id);
     if (!watch) return json(res, 404, { error: 'Наблюдението не е намерено.' });
