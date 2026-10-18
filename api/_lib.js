@@ -363,14 +363,37 @@ async function zenRowsProductPrice(url) {
     if (r.status === 401 || r.status === 403) throw new Error('ZenRows: провери API ключа и достъпа си.');
     if (r.status === 402 || r.status === 429) throw new Error('ZenRows: няма налични кредити или е достигнат лимитът.');
     if (!r.ok) throw new Error('ZenRows не успя да отвори страницата (HTTP ' + r.status + ').');
-    const type = r.headers.get('content-type') || '';
-    if (type && !/text\/html|application\/xhtml\+xml/i.test(type)) {
-      throw new Error('ZenRows не върна HTML страница.');
-    }
+    // ZenRows (and upstream sites) may label valid HTML as text/plain.
+    // Check the actual body, rather than rejecting valid markup by its MIME type.
     if (Number(r.headers.get('content-length') || 0) > 3000000) {
       throw new Error('Страницата е прекалено голяма.');
     }
-    return priceFromHtml(await r.text());
+    const type = String(r.headers.get('content-type') || '').toLowerCase();
+    const body = await r.text();
+    if (body.length > 3000000) throw new Error('Страницата е прекалено голяма.');
+    let html = body;
+    // Some provider responses are JSON (including errors on HTTP 200).
+    // Never mistake an API error object for a real product price.
+    if (/\bjson\b/.test(type) || /^[\s]*[\{\[]/.test(body)) {
+      let data;
+      try { data = JSON.parse(body); } catch {}
+      if (data && !Array.isArray(data) && typeof data.html === 'string') {
+        html = data.html;
+      } else {
+        const code = data && typeof data.code === 'string' &&
+          /^[a-zA-Z0-9_-]{1,50}$/.test(data.code) ? ' (код: ' + data.code + ')' : '';
+        throw new Error('ZenRows върна JSON вместо HTML' + code +
+          ' (HTTP ' + r.status + '). Не е получена проверима цена.');
+      }
+    }
+    // Require real page markup. Never accept an error message or unknown
+    // content type merely because it happens to contain a number.
+    if (!/<!doctype\s+html|<html\b|<head\b|<body\b|<meta\b|<script\b|<main\b|<div\b/i.test(html)) {
+      const label = type.replace(/[^a-z0-9\/+;=_. -]/g, '').slice(0, 80) || 'неизвестен';
+      throw new Error('ZenRows не върна HTML съдържание (HTTP ' + r.status +
+        ', тип: ' + label + ').');
+    }
+    return priceFromHtml(html);
   } catch (e) {
     if (e.name === 'AbortError') throw new Error('ZenRows не отговори до 22 секунди.');
     throw e;

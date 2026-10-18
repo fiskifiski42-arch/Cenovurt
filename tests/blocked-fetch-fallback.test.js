@@ -94,3 +94,67 @@ test('a provider challenge with no verified price never invents a price', async 
     else process.env.ZENROWS_API_KEY = previousKey;
   }
 });
+
+test('ZenRows text/plain containing genuine product HTML is accepted', async () => {
+  const oldFetch = global.fetch, oldLookup = dns.lookup, oldKey = process.env.ZENROWS_API_KEY;
+  try {
+    dns.lookup = async () => [{ address: '1.1.1.1', family: 4 }];
+    process.env.ZENROWS_API_KEY = 'testing-zenrows-key';
+    let count = 0;
+    global.fetch = async () => ++count === 1 ? response(403) : response(200, html, 'text/plain; charset=utf-8');
+    assert.equal(await fetchProductPrice(url), 72.7);
+    assert.equal(count, 2);
+  } finally {
+    global.fetch = oldFetch; dns.lookup = oldLookup;
+    if (oldKey === undefined) delete process.env.ZENROWS_API_KEY;
+    else process.env.ZENROWS_API_KEY = oldKey;
+  }
+});
+
+test('ZenRows JSON wrapper with HTML can be parsed securely', async () => {
+  const oldFetch = global.fetch, oldLookup = dns.lookup, oldKey = process.env.ZENROWS_API_KEY;
+  try {
+    dns.lookup = async () => [{ address: '1.1.1.1', family: 4 }];
+    process.env.ZENROWS_API_KEY = 'testing-zenrows-key';
+    let count = 0;
+    global.fetch = async () => ++count === 1 ? response(403)
+      : response(200, JSON.stringify({ html }), 'application/json');
+    assert.equal(await fetchProductPrice(url), 72.7);
+  } finally {
+    global.fetch = oldFetch; dns.lookup = oldLookup;
+    if (oldKey === undefined) delete process.env.ZENROWS_API_KEY;
+    else process.env.ZENROWS_API_KEY = oldKey;
+  }
+});
+
+test('ZenRows JSON API errors on HTTP 200 never turn into false prices', async () => {
+  const oldFetch = global.fetch, oldLookup = dns.lookup, oldKey = process.env.ZENROWS_API_KEY;
+  try {
+    dns.lookup = async () => [{ address: '1.1.1.1', family: 4 }];
+    process.env.ZENROWS_API_KEY = 'testing-zenrows-key';
+    let count = 0;
+    global.fetch = async () => ++count === 1 ? response(403)
+      : response(200, JSON.stringify({ code: 'FETCH_ERROR', message: 'price EUR 1,00' }), 'application/json');
+    await assert.rejects(fetchProductPrice(url), /ZenRows върна JSON вместо HTML.*FETCH_ERROR/);
+  } finally {
+    global.fetch = oldFetch; dns.lookup = oldLookup;
+    if (oldKey === undefined) delete process.env.ZENROWS_API_KEY;
+    else process.env.ZENROWS_API_KEY = oldKey;
+  }
+});
+
+test('ZenRows text-only page without markup never guesses a price', async () => {
+  const oldFetch = global.fetch, oldLookup = dns.lookup, oldKey = process.env.ZENROWS_API_KEY;
+  try {
+    dns.lookup = async () => [{ address: '1.1.1.1', family: 4 }];
+    process.env.ZENROWS_API_KEY = 'testing-zenrows-key';
+    let count = 0;
+    global.fetch = async () => ++count === 1 ? response(403)
+      : response(200, 'price 5,00 EUR', 'text/plain');
+    await assert.rejects(fetchProductPrice(url), /не върна HTML съдържание/);
+  } finally {
+    global.fetch = oldFetch; dns.lookup = oldLookup;
+    if (oldKey === undefined) delete process.env.ZENROWS_API_KEY;
+    else process.env.ZENROWS_API_KEY = oldKey;
+  }
+});
