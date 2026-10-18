@@ -21,7 +21,7 @@
     .badge,.pill{border:1px solid var(--line);background:#ffffff0a;border-radius:999px;color:var(--muted);padding:8px 12px;font-size:13px}
     .hero{display:grid;grid-template-columns:1.1fr .9fr;gap:28px}.panel{border:1px solid var(--line);background:var(--panel);backdrop-filter:blur(18px);border-radius:26px;box-shadow:var(--shadow)}
     .copy{padding:clamp(28px,5vw,58px)}.eyebrow{color:var(--accent);text-transform:uppercase;letter-spacing:.13em;font-size:12px;font-weight:800} h1{font-size:clamp(40px,7vw,72px);line-height:.96;letter-spacing:-.055em;margin:18px 0}.lead{color:var(--muted);font-size:clamp(17px,2vw,20px);line-height:1.6}.features{display:flex;gap:10px;flex-wrap:wrap;margin-top:28px}.pill{color:#dfe6f8}
-    .card{padding:24px}.card h2{margin:0 0 6px}.sub{color:var(--muted);font-size:14px;margin:0 0 18px}.form{display:grid;gap:14px}.field{display:grid;gap:7px}.field label{font-size:13px;font-weight:700}
+    .card{padding:24px}.card h2{margin:0 0 6px}.sub{color:var(--muted);font-size:14px;margin:0 0 18px}.form{display:grid;gap:14px}.field{display:grid;gap:7px}.field label{font-size:13px;font-weight:700}.field[hidden]{display:none}
     input{width:100%;border:1px solid var(--line);background:#04091694;color:var(--text);padding:13px 14px;border-radius:13px;outline:none;font:inherit} input:focus{border-color:#7cc8ffb3;box-shadow:0 0 0 4px #7cc8ff14}
     button{border:0;border-radius:13px;padding:13px 15px;font:inherit;font-weight:850;cursor:pointer}.primary{color:#071019;background:linear-gradient(145deg,var(--accent),var(--accent2))}.secondary{color:var(--text);border:1px solid var(--line);background:#ffffff0e}.danger{color:#ffd4d4;border:1px solid #ff8a8a2e;background:#ff8a8a14}.small{padding:10px 12px;font-size:12px}.wide{width:100%}
     .notice{margin-top:12px;padding:12px 13px;border-radius:12px;border:1px solid #73e2a72e;background:#73e2a714;color:#cef8df;font-size:13px;line-height:1.5}.notice.err{border-color:#ff8a8a2e;background:#ff8a8a14;color:#ffd3d3}.notice.info{border-color:#7cc8ff2e;background:#7cc8ff12;color:#d7ecff}
@@ -48,7 +48,8 @@
         <p class="sub">Въведи своя email, за да започнеш безплатно с до 3 продукта. Не е нужна карта.</p>
         <div class="form">
           <div class="field"><label for="accountEmail">Email</label><input id="accountEmail" type="email" placeholder="you@abv.bg" inputmode="email" autocomplete="email" autocapitalize="none" autocorrect="off" spellcheck="false" /></div>
-          <button class="secondary" type="button" onclick="loadAccount(true)">Провери профила</button>
+          <button class="secondary" type="button" onclick="beginLogin()">Вход / изпрати код</button>
+          <div class="field" id="loginCodeBox" hidden><label for="loginCode">6-цифрен код от имейла</label><input id="loginCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" /><button class="primary" type="button" onclick="confirmLogin()">Потвърди кода</button></div>
         </div>
         <div id="message"></div>
         <div class="account" id="accountBox" hidden>
@@ -82,16 +83,9 @@
         <article class="plan"><h3>Free</h3><div class="for">За тест и проследяване на важни покупки.</div><div class="plan-price">€0 <small>без карта</small></div><ul><li>До 3 наблюдавани продукта</li><li>Автоматична ежедневна проверка</li><li>Email сигнали (при настроен Resend)</li><li>Ръчна проверка</li></ul><button class="secondary" type="button" onclick="startFree()">Започни безплатно</button></article>
         <article class="plan"><h3>Basic</h3><div class="for">За лично ползване и няколко важни покупки.</div><div class="plan-price">€9 <small>еднократно</small></div><ul><li>До 10 наблюдавани продукта</li><li>Автоматична ежедневна проверка</li><li>Email сигнали</li><li>Ръчна проверка</li></ul><button class="secondary" type="button" onclick="buyPlan('Basic')">Купи Basic</button></article>
         <article class="plan featured"><div class="plan-badge">Най-популярен</div><h3>Pro</h3><div class="for">За хора, които следят повече оферти.</div><div class="plan-price">€19 <small>еднократно</small></div><ul><li>До 50 наблюдавани продукта</li><li>Всичко от Basic</li><li>Повече активни наблюдения</li><li>Бъдещи функционални ъпдейти</li></ul><button class="primary" type="button" onclick="buyPlan('Pro')">Купи Pro</button></article>
-        <article class="plan"><h3>Business</h3><div class="for">За по-сериозно следене и малък бизнес.</div><div class="plan-price">€39 <small>еднократно</small></div><ul><li>До 200 наблюдавани продукта</li><li>Всичко от Pro</li><li>Подходящ за по-големи списъци</li><li>Приоритет за нови функции</li></ul><button class="secondary" type="button" onclick="buyPlan('Business')">Купи Business</button></article>
-      </div>
-      <div class="plan-note">Плащането се обработва от Stripe. След успешно плащане профилът се активира автоматично.</div>
-    </section>
-
-    <footer>Ценовърт · финална Vercel версия</footer>
-  </main>
-
-<script>
+        <article class="plan"><h3>Business</h3><div class="for">За по-сериозно следене и малък бизнес.</div><div class="plan-price">€39 <small>еднократно</small></div><ul><li>До 200 наблюдавани продукта</li><li>Всичко от Pro</li><li>Подходящ за по-големи списъци</li><li>Приоритет за нови функции</li><
   let account=null,watches=[];
+  let sessionToken=localStorage.getItem('cenovurt-session')||'';
   const $=id=>document.getElementById(id);
   const emailEl=$('accountEmail');
   const saved=localStorage.getItem('cenovurt-email')||''; if(saved) emailEl.value=saved;
@@ -103,7 +97,7 @@
   function esc(v){return String(v??'').replace(/[&<>'"\u0060]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;','\u0060':'&#96;'}[c]))}
   function show(text,err=false,info=false){const box=$('message');box.textContent='';if(!text)return;const n=document.createElement('div');n.className='notice '+(err?'err':info?'info':'');n.textContent=String(text);box.appendChild(n)}
   function currentEmail(){const e=normalizeEmail(emailEl.value); if(validEmail(e)) localStorage.setItem('cenovurt-email',e); return e}
-  async function api(path,opts={}){const r=await fetch(path,{headers:{'Content-Type':'application/json',...(opts.headers||{})},...opts}); const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d.error||`Грешка ${r.status}`); return d}
+  async function api(path,opts={}){const headers={'Content-Type':'application/json',...(opts.headers||{})};if(sessionToken)headers.Authorization='Bearer '+sessionToken;const r=await fetch(path,{...opts,headers});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'Грешка '+r.status);return d}
 
   function renderAccount(){
     $('accountBox').hidden=!account;
@@ -122,9 +116,35 @@
     }).join('')+'</div>';
   }
 
+
+  async function beginLogin(){
+    const email=currentEmail();
+    if(!validEmail(email))return show('Въведи валиден имейл адрес.',true);
+    sessionToken='';localStorage.removeItem('cenovurt-session');
+    account=null;watches=[];renderAccount();renderWatches();
+    show('Изпращам код за вход…',false,true);
+    try{
+      await api('/api/login',{method:'POST',body:JSON.stringify({email})});
+      $('loginCodeBox').hidden=false;
+      show('Изпратих 6-цифрен код. Провери пощата и въведи кода тук.',false,true);
+    }catch(e){show(e.message,true)}
+  }
+  async function confirmLogin(){
+    const email=currentEmail(),code=$('loginCode').value.trim();
+    if(!/^[0-9]{6}$/.test(code))return show('Въведи 6-цифрения код от имейла.',true);
+    try{
+      const d=await api('/api/confirm-login',{method:'POST',body:JSON.stringify({email,code})});
+      sessionToken=d.token;localStorage.setItem('cenovurt-session',sessionToken);
+      $('loginCodeBox').hidden=true;$('loginCode').value='';
+      if(new URLSearchParams(location.search).has('session_id'))await verifyPayment();
+      else await loadAccount(true);
+    }catch(e){show(e.message,true)}
+  }
+
   async function loadAccount(verbose=false){
     const email=currentEmail();
     if(!validEmail(email)){show('Въведи валиден email адрес.',true);return}
+    if(!sessionToken){show('Първо потвърди имейла си с код.',true);return}
     try{
       const [a,w]=await Promise.all([api(`/api/account?email=${encodeURIComponent(email)}`),api(`/api/watches?email=${encodeURIComponent(email)}`)]);
       account=a; watches=w.watches||[]; renderAccount(); renderWatches();
@@ -135,6 +155,7 @@
   async function startFree(){
     const email=currentEmail();
     if(!validEmail(email)){show('Въведи валиден email, за да започнеш безплатно.',true); $('accountCard').scrollIntoView({behavior:'smooth'}); return}
+    if(!sessionToken){await beginLogin();document.getElementById('accountCard').scrollIntoView({behavior:'smooth'});return}
     await loadAccount(true);
     document.getElementById('watchForm').scrollIntoView({behavior:'smooth'});
   }
@@ -142,6 +163,7 @@
   async function buyPlan(plan){
     const email=currentEmail();
     if(!validEmail(email)){show('Първо въведи валиден email в полето „Твоят профил“.',true); document.getElementById('accountCard').scrollIntoView({behavior:'smooth'}); return}
+    if(!sessionToken){await beginLogin();document.getElementById('accountCard').scrollIntoView({behavior:'smooth'});return}
     show('Отварям защитеното плащане в Stripe…',false,true);
     try{const d=await api('/api/checkout',{method:'POST',body:JSON.stringify({email,plan})}); location.href=d.url}catch(e){show(e.message,true)}
   }
@@ -150,6 +172,7 @@
     const q=new URLSearchParams(location.search); const sid=q.get('session_id'); const state=q.get('payment');
     if(state==='cancelled'){show('Плащането е отказано. Нищо не е таксувано.',true); history.replaceState({},'',location.pathname); return}
     if(state==='success'&&sid){
+      if(!sessionToken){show('Първо потвърди имейла си, за да активирам плащането.',true);return}
       show('Потвърждавам плащането…',false,true);
       try{const d=await api(`/api/verify-session?session_id=${encodeURIComponent(sid)}`); emailEl.value=d.email; localStorage.setItem('cenovurt-email',d.email); history.replaceState({},'',location.pathname); await loadAccount(false); show(`Готово — пакет ${d.plan} е активиран. Лимит: ${d.limit} продукта.`)}catch(e){show(e.message,true)}
     }
@@ -158,6 +181,7 @@
   $('watchForm').addEventListener('submit',async e=>{
     e.preventDefault(); const email=currentEmail(); const url=$('url').value.trim(); const targetPrice=Number($('price').value.replace(',','.'));
     if(!validEmail(email)) return show('Първо въведи валиден email в профила.',true);
+    if(!sessionToken) return show('Първо натисни „Вход / изпрати код“ и потвърди имейла.',true);
     if(!/^https?:\/\//i.test(url)) return show('Постави пълен линк, започващ с http:// или https://',true);
     if(!Number.isFinite(targetPrice)||targetPrice<=0) return show('Въведи валидна прагова цена.',true);
     try{await api('/api/watches',{method:'POST',body:JSON.stringify({email,url,targetPrice})}); e.target.reset(); await loadAccount(false); show('Наблюдението е добавено. Ценовърт ще го проверява автоматично.')}catch(err){show(err.message,true)}
@@ -166,6 +190,10 @@
   async function removeWatch(id){const email=currentEmail(); try{await api(`/api/watches?email=${encodeURIComponent(email)}&id=${encodeURIComponent(id)}`,{method:'DELETE'}); await loadAccount(false); show('Наблюдението е премахнато.')}catch(e){show(e.message,true)}}
   async function checkOne(id){const email=currentEmail(); show('Проверявам текущата цена…',false,true); try{const d=await api('/api/check-one',{method:'POST',body:JSON.stringify({email,id})}); await loadAccount(false); show(d.hit ? 'Цената е '+money(d.price)+' — под твоя праг. '+(d.notified?'Изпратих email известие.':'Без ново известие — вече е изпращан сигнал.') : 'Текуща цена: '+money(d.price)+'. Все още е над прага.')}catch(e){await loadAccount(false); show(e.message,true)}}
   async function sendTestEmail(){const email=currentEmail(); if(!validEmail(email)) return show('Въведи валиден email.',true); show('Изпращам тестов email…',false,true); try{await api('/api/test-alert',{method:'POST',body:JSON.stringify({email})}); show(`Тестовият email е изпратен до ${email}.`)}catch(e){show(e.message,true)}}
+  function scrollToPricing(){document.getElementById('pricing').scrollIntoView({behavior:'smooth'})}
+
+  verifyPayment().then(()=>{if(!new URLSearchParams(location.search).get('session_id') && saved && sessionToken) loadAccount(false)});
+body:JSON.stringify({email})}); show(`Тестовият email е изпратен до ${email}.`)}catch(e){show(e.message,true)}}
   function scrollToPricing(){document.getElementById('pricing').scrollIntoView({behavior:'smooth'})}
 
   verifyPayment().then(()=>{if(!new URLSearchParams(location.search).get('session_id') && saved) loadAccount(false)});
