@@ -9,7 +9,7 @@ module.exports = async (req, res) => {
     if (!validEmail(email)) return json(res, 400, { error: 'Невалиден email.' });
     if (!isOwner(req, email)) return json(res, 401, { error: 'Първо потвърди имейла си с код.' });
     const account = await getAccount(email);
-    const plan = effectivePlan(account);
+    const plan = effectivePlan(account, email);
 
     const key = `cenovurt:test:${email}`;
     const last = Number(await redis('GET', key) || 0);
@@ -26,7 +26,7 @@ module.exports = async (req, res) => {
         <h2>Тестът работи ✅</h2>
         <p>Това е реален тестов email от <strong>Ценовърт</strong>.</p>
         <p>Когато наблюдаван продукт падне под зададената от теб прагова цена, ще получиш сигнал на този адрес.</p>
-        <p style="color:#667085;font-size:13px">План: ${escapeHtml(plan.name)} · лимит: ${plan.limit} продукта</p>
+        <p style="color:#667085;font-size:13px">План: ${escapeHtml(plan.name)} · лимит: ${plan.limit === null ? 'без ограничение' : plan.limit + ' продукта'}</p>
       </div>`,
     });
     await redis('SET', key, String(Date.now()));
