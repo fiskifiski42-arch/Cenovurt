@@ -73,6 +73,29 @@ test('Paid account keeps its existing plan limit',async()=>{
   assert.equal(w.status,201); assert.equal(w.result.limit,10);
 });
 
+test('Owner account is free with no app-level product limit; other accounts remain Free',async()=>{
+  const original = process.env.CENOVURT_OWNER_EMAIL;
+  process.env.CENOVURT_OWNER_EMAIL = 'OWNER@EXAMPLE.COM';
+  try {
+    const mine = await call(account,'GET',null,{email:'owner@example.com'});
+    assert.equal(mine.status,200);
+    assert.equal(mine.result.plan,'Owner');
+    assert.equal(mine.result.limit,null);
+    assert.equal(mine.result.paid,false);
+    for (let i=0;i<5;i++) {
+      const added=await call(watches,'POST',{email:'owner@example.com',url:`https://example.com/owner-${i}`,targetPrice:20});
+      assert.equal(added.status,201);
+      assert.equal(added.result.limit,null);
+    }
+    const other=await call(account,'GET',null,{email:'other@example.com'});
+    assert.equal(other.result.plan,'Free');
+    assert.equal(other.result.limit,3);
+  } finally {
+    if(original === undefined) delete process.env.CENOVURT_OWNER_EMAIL;
+    else process.env.CENOVURT_OWNER_EMAIL = original;
+  }
+});
+
 test('Free users can request one test email per 24 hours',async()=>{
   const first=await call(alert,'POST',{email:'new@example.com'});
   assert.equal(first.status,200);assert.equal(emailSent.length,1);
