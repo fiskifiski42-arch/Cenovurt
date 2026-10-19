@@ -110,7 +110,7 @@
   function renderAccount(){
     $('accountBox').hidden=!account;
     $('planName').textContent=account?.plan||'Free';
-    $('planUsage').textContent=account?`${account.used} / ${account.limit}`:'0 / 3';
+    $('planUsage').textContent=account?`${account.used} / ${account.limit === null ? '∞' : account.limit}`:'0 / 3';
     $('count').textContent=`${watches.length} активни`;
   }
 
@@ -156,7 +156,7 @@
     try{
       const [a,w]=await Promise.all([api(`/api/account?email=${encodeURIComponent(email)}`),api(`/api/watches?email=${encodeURIComponent(email)}`)]);
       account=a; watches=w.watches||[]; renderAccount(); renderWatches();
-      if(verbose) show(`Активен план ${account.plan} · ${account.used}/${account.limit} продукта. ${account.paid?'':'Безплатен достъп, без карта.'}`,false,true);
+      if(verbose) show(`Активен план ${account.plan} · ${account.used}/${account.limit === null ? '∞' : account.limit} продукта. ${account.paid?'':'Безплатен достъп, без карта.'}`,false,true);
     }catch(e){show(e.message,true)}
   }
 
