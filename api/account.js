@@ -8,7 +8,7 @@ module.exports = async (req, res) => {
     if (!validEmail(email)) return json(res, 400, { error: 'Невалиден email.' });
     if (!isOwner(req, email)) return json(res, 401, { error: 'Първо потвърди имейла си с код.' });
     const [account, watches] = await Promise.all([getAccount(email), getWatches(email)]);
-    const plan = effectivePlan(account);
+    const plan = effectivePlan(account, email);
     return json(res, 200, {
       email,
       plan: plan.name,
