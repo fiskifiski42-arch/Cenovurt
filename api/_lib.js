@@ -112,7 +112,13 @@ async function setJSON(key, value) {
   await redis('SET', key, JSON.stringify(value));
 }
 
-function effectivePlan(account) {
+function effectivePlan(account, email) {
+  // A verified account matching the server-configured owner email has no app-level watch limit.
+  // Only configure CENOVURT_OWNER_EMAIL as a private Vercel environment variable.
+  const ownerEmail = normalizeEmail(process.env.CENOVURT_OWNER_EMAIL);
+  if (validEmail(ownerEmail) && normalizeEmail(email) === ownerEmail) {
+    return { name: 'Owner', limit: null, paid: false };
+  }
   const name = account?.plan;
   if (name && PLANS[name]) return { name, limit: PLANS[name].limit, paid: true };
   return { ...FREE_PLAN, paid: false };
