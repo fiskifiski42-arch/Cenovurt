@@ -81,11 +81,11 @@
       <div class="pricing-intro"><div class="eyebrow">Планове</div><h2>Избери своя Ценовърт</h2><p>Започни безплатно с 3 продукта. Платените пакети са еднократни, ако ти трябва по-висок лимит.</p></div>
       <div class="pricing-grid">
         <article class="plan"><h3>Free</h3><div class="for">За тест и проследяване на важни покупки.</div><div class="plan-price">€0 <small>без карта</small></div><ul><li>До 3 наблюдавани продукта</li><li>Автоматична ежедневна проверка</li><li>Email сигнали (при настроен Resend)</li><li>Ръчна проверка</li></ul><button class="secondary" type="button" onclick="startFree()">Започни безплатно</button></article>
-        <article class="plan"><h3>Basic</h3><div class="for">За лично ползване и няколко важни покупки.</div><div class="plan-price">€9 <small>еднократно</small></div><ul><li>До 10 наблюдавани продукта</li><li>Автоматична ежедневна проверка</li><li>Email сигнали</li><li>Ръчна проверка</li></ul><button class="secondary" type="button" onclick="buyPlan('Basic')">Купи Basic</button></article>
-        <article class="plan featured"><div class="plan-badge">Най-популярен</div><h3>Pro</h3><div class="for">За хора, които следят повече оферти.</div><div class="plan-price">€19 <small>еднократно</small></div><ul><li>До 50 наблюдавани продукта</li><li>Всичко от Basic</li><li>Повече активни наблюдения</li><li>Бъдещи функционални ъпдейти</li></ul><button class="primary" type="button" onclick="buyPlan('Pro')">Купи Pro</button></article>
-        <article class="plan"><h3>Business</h3><div class="for">За по-сериозно следене и малък бизнес.</div><div class="plan-price">€39 <small>еднократно</small></div><ul><li>До 200 наблюдавани продукта</li><li>Всичко от Pro</li><li>Подходящ за по-големи списъци</li><li>Приоритет за нови функции</li></ul><button class="secondary" type="button" onclick="buyPlan('Business')">Купи Business</button></article>
+        <article class="plan"><h3>Basic</h3><div class="for">За лично ползване и няколко важни покупки.</div><div class="plan-price">€9 <small>еднократно</small></div><ul><li>До 10 наблюдавани продукта</li><li>Автоматична ежедневна проверка</li><li>Email сигнали</li><li>Ръчна проверка</li></ul><button class="secondary" type="button" onclick="buyPlan('Basic')">Карта · Basic</button><button class="secondary" type="button" onclick="buyPayPal('Basic')">PayPal · Basic</button></article>
+        <article class="plan featured"><div class="plan-badge">Най-популярен</div><h3>Pro</h3><div class="for">За хора, които следят повече оферти.</div><div class="plan-price">€19 <small>еднократно</small></div><ul><li>До 50 наблюдавани продукта</li><li>Всичко от Basic</li><li>Повече активни наблюдения</li><li>Бъдещи функционални ъпдейти</li></ul><button class="primary" type="button" onclick="buyPlan('Pro')">Карта · Pro</button><button class="secondary" type="button" onclick="buyPayPal('Pro')">PayPal · Pro</button></article>
+        <article class="plan"><h3>Business</h3><div class="for">За по-сериозно следене и малък бизнес.</div><div class="plan-price">€39 <small>еднократно</small></div><ul><li>До 200 наблюдавани продукта</li><li>Всичко от Pro</li><li>Подходящ за по-големи списъци</li><li>Приоритет за нови функции</li></ul><button class="secondary" type="button" onclick="buyPlan('Business')">Карта · Business</button><button class="secondary" type="button" onclick="buyPayPal('Business')">PayPal · Business</button></article>
       </div>
-      <div class="plan-note">Плащането се обработва от Stripe. След успешно плащане профилът се активира автоматично.</div>
+      <div class="plan-note">Плащане с карта (Stripe) или PayPal. Методите се активират след тестове и настройка на платежни акаунти. След потвърдено плащане профилът се активира автоматично.</div>
     </section>
 
     <footer>Ценовърт · финална Vercel версия</footer>
@@ -144,7 +144,7 @@
       const d=await api('/api/confirm-login',{method:'POST',body:JSON.stringify({email,code})});
       sessionToken=d.token;localStorage.setItem('cenovurt-session',sessionToken);
       $('loginCodeBox').hidden=true;$('loginCode').value='';
-      if(new URLSearchParams(location.search).has('session_id'))await verifyPayment();
+      if(new URLSearchParams(location.search).has('session_id') || new URLSearchParams(location.search).get('payment')==='paypal-return')await verifyPayment();
       else await loadAccount(true);
     }catch(e){show(e.message,true)}
   }
@@ -176,9 +176,29 @@
     try{const d=await api('/api/checkout',{method:'POST',body:JSON.stringify({email,plan})}); location.href=d.url}catch(e){show(e.message,true)}
   }
 
+  async function buyPayPal(plan){
+    const email=currentEmail();
+    if(!validEmail(email)){show('Първо въведи валиден email в профила.',true); $('accountCard').scrollIntoView({behavior:'smooth'}); return}
+    if(!sessionToken){await beginLogin();$('accountCard').scrollIntoView({behavior:'smooth'});return}
+    show('Подготвям PayPal плащането…',false,true);
+    try{const d=await api('/api/paypal-create',{method:'POST',body:JSON.stringify({email,plan})});location.href=d.url}
+    catch(e){show(e.message,true)}
+  }
+
   async function verifyPayment(){
     const q=new URLSearchParams(location.search); const sid=q.get('session_id'); const state=q.get('payment');
     if(state==='cancelled'){show('Плащането е отказано. Нищо не е таксувано.',true); history.replaceState({},'',location.pathname); return}
+    if(state==='paypal-return'&&q.get('token')){
+      if(!sessionToken){show('Потвърди имейла си, за да активирам PayPal плащането.',true);return}
+      show('Потвърждавам PayPal плащането…',false,true);
+      try{
+        const d=await api('/api/paypal-capture',{method:'POST',body:JSON.stringify({orderId:q.get('token')})});
+        emailEl.value=d.email; localStorage.setItem('cenovurt-email',d.email);
+        history.replaceState({},'',location.pathname); await loadAccount(false);
+        show(`Готово — пакет ${d.plan} е активиран. Лимит: ${d.limit} продукта.`);
+      }catch(e){show(e.message,true)}
+      return;
+    }
     if(state==='success'&&sid){
       if(!sessionToken){show('Потвърди имейла си, за да активирам плащането.',true);return}
       show('Потвърждавам плащането…',false,true);
@@ -200,7 +220,7 @@
   async function sendTestEmail(){const email=currentEmail(); if(!validEmail(email)) return show('Въведи валиден email.',true); show('Изпращам тестов email…',false,true); try{await api('/api/test-alert',{method:'POST',body:JSON.stringify({email})}); show(`Тестовият email е изпратен до ${email}.`)}catch(e){show(e.message,true)}}
   function scrollToPricing(){document.getElementById('pricing').scrollIntoView({behavior:'smooth'})}
 
-  verifyPayment().then(()=>{if(!new URLSearchParams(location.search).get('session_id') && saved && sessionToken) loadAccount(false)});
+  verifyPayment().then(()=>{if(!new URLSearchParams(location.search).get('session_id') && new URLSearchParams(location.search).get('payment')!=='paypal-return' && saved && sessionToken) loadAccount(false)});
 </script>
 </body>
 </html>
