@@ -360,15 +360,32 @@ async function zenRowsProductPrice(url) {
   const endpoint = new URL('https://api.zenrows.com/v1/');
   endpoint.searchParams.set('apikey', key);
   endpoint.searchParams.set('url', target.href);
-  endpoint.searchParams.set('js_render', 'true');
-  endpoint.searchParams.set('premium_proxy', 'true');
+  // Adaptive mode selects only the protections a site needs, avoiding a fixed
+  // 25-credit JS-render + premium-proxy configuration for every fallback.
+  endpoint.searchParams.set('mode', 'auto');
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 22000);
   try {
     const r = await fetch(endpoint.href, { redirect: 'manual', signal: controller.signal });
     if (r.status === 401 || r.status === 403) throw new Error('ZenRows: провери API ключа и достъпа си.');
     if (r.status === 402 || r.status === 429) throw new Error('ZenRows: няма налични кредити или е достигнат лимитът.');
-    if (!r.ok) throw new Error('ZenRows не успя да отвори страницата (HTTP ' + r.status + ').');
+    if (!r.ok) {
+      // Preserve the provider's machine-readable reason without exposing API
+      // tokens, raw response bodies, or accidentally treating errors as prices.
+      let providerCode = '';
+      try {
+        const failure = JSON.parse((await r.text()).slice(0, 4096));
+        if (typeof failure?.code === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(failure.code)) {
+          providerCode = ', код ' + failure.code;
+        }
+      } catch {}
+      if (r.status === 422) {
+        throw new Error('ZenRows не успя да извлече страницата (HTTP 422' +
+          providerCode + '). Сайтът може да блокира проверката; цена не е потвърдена.');
+      }
+      throw new Error('ZenRows не успя да отвори страницата (HTTP ' +
+        r.status + providerCode + ').');
+    }
     // ZenRows (and upstream sites) may label valid HTML as text/plain.
     // Check the actual body, rather than rejecting valid markup by its MIME type.
     if (Number(r.headers.get('content-length') || 0) > 3000000) {
