@@ -213,7 +213,38 @@ function parsePriceText(text) {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-function extractPrice(html) {
+// Retailer-specific hints complement standards-based Product JSON-LD. Keep them
+// conservative: a listing price, old crossed-out price or recommendation is
+// not proof of the watched product's current price.
+function retailerPrice(html, sourceUrl) {
+  let host = '';
+  try { host = new URL(sourceUrl).hostname.toLowerCase(); } catch { return null; }
+
+  if (host === 'praktiker.bg' || host.endsWith('.praktiker.bg')) {
+    const index = html.indexOf('product-store-prices__item');
+    if (index >= 0) {
+      // Scope to the product detail's price panel; ignore the old-price class.
+      const panel = html.slice(index, index + 1600);
+      const match = panel.match(/<span\b[^>]*class=["']product-price["'][^>]*>\s*<span\b[^>]*class=["']product-price__value["'][^>]*>\s*([0-9][0-9.,\s]*)/i);
+      if (match) {
+        const amount = parsePriceText(match[1]);
+        if (amount) return amount;
+      }
+    }
+  }
+
+  if (/(^|\.)amazon\.[a-z.]+$/.test(host)) {
+    // Amazon can render hundreds of recommendations before or after the item.
+    // Only accept the primary buy-box price, never an arbitrary a-offscreen price.
+    const fixed = html.match(/<[^>]*id=["']priceblock_(?:ourprice|dealprice|saleprice)["'][^>]*>\s*([^<]+)</i);
+    if (fixed && /€|EUR/.test(fixed[1])) return parsePriceText(fixed[1]);
+    const toPay = html.match(/<span\b[^>]*class=["'][^"']*(?:priceToPay|apexPriceToPay)[^"']*["'][^>]*>[\s\S]{0,900}?<span\b[^>]*class=["'][^"']*a-offscreen[^"']*["'][^>]*>\s*([^<]+)</i);
+    if (toPay && /€|EUR/.test(toPay[1])) return parsePriceText(toPay[1]);
+  }
+  return null;
+}
+
+function extractPrice(html, sourceUrl = '') {
   if (typeof html !== 'string' || !html) return null;
   const parseAttributes = tag => {
     const attrs = {};
@@ -231,6 +262,8 @@ function extractPrice(html) {
     }
     return unit === 'EUR' || unit === '€' ? amount : null;
   };
+  const shopPrice = retailerPrice(html, sourceUrl);
+  if (shopPrice) return shopPrice;
   const metas = [...html.matchAll(/<meta\b[^>]*>/gi)].map(m => parseAttributes(m[0]));
   const metaName = m => String(m.property || m.itemprop || m.name || '').toLowerCase();
   const curr = metas.find(m => ['product:price:currency','og:price:currency','pricecurrency'].includes(metaName(m)));
@@ -239,6 +272,16 @@ function extractPrice(html) {
     if (['product:price:amount','og:price:amount','price'].includes(metaName(m))) {
       const value = eur(m.content, currency);
       if (value) return value;
+    }
+  }
+
+  // HTML Microdata is common on store pages that do not publish JSON-LD.
+  const currencyTag = metas.find(m => ['pricecurrency', 'product:price:currency', 'og:price:currency'].includes(metaName(m)));
+  for (const match of html.matchAll(/<(?:(?:span|div|p|data))\b[^>]*\bitemprop\s*=\s*["']price["'][^>]*>/gi)) {
+    const attrs = parseAttributes(match[0]);
+    if (attrs.content || attrs.value) {
+      const price = eur(attrs.content || attrs.value, currencyTag?.content || currency);
+      if (price) return price;
     }
   }
 
@@ -270,6 +313,12 @@ function extractPrice(html) {
     try { const v = scan(JSON.parse(match[2].trim())); if (v) return v; } catch {}
   }
 
+  // Amazon pages frequently contain unrelated recommendation prices. Do not
+  // fall back to generic page-wide text on this domain.
+  let sourceHost = '';
+  try { sourceHost = new URL(sourceUrl).hostname.toLowerCase(); } catch {}
+  if (/(^|\.)amazon\.[a-z.]+$/.test(sourceHost)) return null;
+
   // Only currency-labelled amounts are accepted as fallback. Unknown values are not guessed.
   for (const match of html.matchAll(/(?:цена|price)\s*[:=]?\s*[^<>\n]{0,30}?([0-9][0-9\s.,]{0,16})\s*(€|EUR|лв\.?|BGN)/gi)) {
     const unit = /^лв/i.test(match[2]) ? 'BGN' : match[2];
@@ -289,11 +338,11 @@ function cleanProductURL(value) {
   return parsed;
 }
 
-function priceFromHtml(html) {
+function priceFromHtml(html, sourceUrl = '') {
   if (typeof html !== 'string' || html.length > 3000000) {
     throw new Error('Страницата е прекалено голяма или невалидна.');
   }
-  const price = extractPrice(html);
+  const price = extractPrice(html, sourceUrl);
   if (!price) {
     const err = new Error('Не открих надеждна цена за този продукт.');
     err.code = 'NO_PRICE';
@@ -337,7 +386,7 @@ async function directProductPrice(url) {
       if (Number(r.headers.get('content-length') || 0) > 3000000) {
         throw new Error('Страницата е прекалено голяма.');
       }
-      return priceFromHtml(await r.text());
+      return priceFromHtml(await r.text(), current.href);
     }
     throw new Error('Прекалено много пренасочвания от магазина.');
   } catch (e) {
@@ -416,7 +465,7 @@ async function zenRowsProductPrice(url) {
       throw new Error('ZenRows не върна HTML съдържание (HTTP ' + r.status +
         ', тип: ' + label + ').');
     }
-    return priceFromHtml(html);
+    return priceFromHtml(html, target.href);
   } catch (e) {
     if (e.name === 'AbortError') throw new Error('ZenRows не отговори до 22 секунди.');
     throw e;
