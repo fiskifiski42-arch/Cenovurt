@@ -47,7 +47,7 @@
         <h2>Твоят профил</h2>
         <p class="sub">Въведи своя email, за да започнеш безплатно с до 3 продукта. Не е нужна карта.</p>
         <div class="form">
-          <div class="field"><label for="accountEmail">Email</label><input id="accountEmail" type="email" placeholder="you@abv.bg" inputmode="email" autocomplete="email" autocapitalize="none" autocorrect="off" spellcheck="false" /></div>
+          <div class="field"><label for="accountEmail">Email</label><input id="accountEmail" type="email" placeholder="you@abv.bg" inputmode="email" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" /></div>
           <button class="secondary" type="button" onclick="beginLogin()">Вход / изпрати код</button>
           <div class="field" id="loginCodeBox" hidden><label for="loginCode">6-цифрен код от имейла</label><input id="loginCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" /><button class="primary" type="button" onclick="confirmLogin()">Потвърди кода</button></div>
         </div>
@@ -96,7 +96,8 @@
   let sessionToken=localStorage.getItem('cenovurt-session')||'';
   const $=id=>document.getElementById(id);
   const emailEl=$('accountEmail');
-  const saved=localStorage.getItem('cenovurt-email')||''; if(saved) emailEl.value=saved;
+  localStorage.removeItem('cenovurt-email');
+  emailEl.value='';
 
   function normalizeEmail(v){return String(v||'').trim().toLowerCase()}
   function validEmail(v){return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeEmail(v))}
@@ -104,7 +105,7 @@
   function host(url){try{return new URL(url).hostname.replace(/^www\./,'')}catch{return 'Продукт'}}
   function esc(v){return String(v??'').replace(/[&<>'"\u0060]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;','\u0060':'&#96;'}[c]))}
   function show(text,err=false,info=false){const box=$('message');box.textContent='';if(!text)return;const n=document.createElement('div');n.className='notice '+(err?'err':info?'info':'');n.textContent=String(text);box.appendChild(n)}
-  function currentEmail(){const e=normalizeEmail(emailEl.value); if(validEmail(e)) localStorage.setItem('cenovurt-email',e); return e}
+  function currentEmail(){return normalizeEmail(emailEl.value)}
   async function api(path,opts={}){const headers={'Content-Type':'application/json',...(opts.headers||{})};if(sessionToken)headers.Authorization='Bearer '+sessionToken;const r=await fetch(path,{...opts,headers});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'Грешка '+r.status);return d}
 
   function renderAccount(){
@@ -182,7 +183,7 @@
     if(state==='success'&&sid){
       if(!sessionToken){show('Потвърди имейла си, за да активирам плащането.',true);return}
       show('Потвърждавам плащането…',false,true);
-      try{const d=await api(`/api/verify-session?session_id=${encodeURIComponent(sid)}`); emailEl.value=d.email; localStorage.setItem('cenovurt-email',d.email); history.replaceState({},'',location.pathname); await loadAccount(false); show(`Готово — пакет ${d.plan} е активиран. Лимит: ${d.limit} продукта.`)}catch(e){show(e.message,true)}
+      try{const d=await api(`/api/verify-session?session_id=${encodeURIComponent(sid)}`); emailEl.value=d.email; history.replaceState({},'',location.pathname); await loadAccount(false); show(`Готово — пакет ${d.plan} е активиран. Лимит: ${d.limit} продукта.`)}catch(e){show(e.message,true)}
     }
   }
 
@@ -200,7 +201,7 @@
   async function sendTestEmail(){const email=currentEmail(); if(!validEmail(email)) return show('Въведи валиден email.',true); show('Изпращам тестов email…',false,true); try{await api('/api/test-alert',{method:'POST',body:JSON.stringify({email})}); show(`Тестовият email е изпратен до ${email}.`)}catch(e){show(e.message,true)}}
   function scrollToPricing(){document.getElementById('pricing').scrollIntoView({behavior:'smooth'})}
 
-  verifyPayment().then(()=>{if(!new URLSearchParams(location.search).get('session_id') && saved && sessionToken) loadAccount(false)});
+  verifyPayment();
 </script>
 </body>
 </html>
