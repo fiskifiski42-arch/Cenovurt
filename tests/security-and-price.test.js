@@ -15,6 +15,31 @@ test('product price from Product JSON-LD', () => {
 test('do not mistake shipping numbers for product price', () => {
   assert.equal(extractPrice('<div>Shipping €9.99</div>'), null);
 });
+test('Praktiker selects the active product price instead of crossed-out price', () => {
+  const html = '<div class="product-store-prices__item"><span class="product-price product-price--old"><span class="product-price__value">172.90</span></span><span class="product-price"><span class="product-price__value">146.96</span></span></div>';
+  assert.equal(extractPrice(html, 'https://praktiker.bg/bg/Konvektori/item/p/695843'), 146.96);
+});
+
+test('Praktiker refuses an old price when no current price is present', () => {
+  const html = '<div class="product-store-prices__item"><span class="product-price product-price--old"><span class="product-price__value">172.90</span></span></div>';
+  assert.equal(extractPrice(html, 'https://praktiker.bg/bg/Konvektori/item/p/695843'), null);
+});
+
+test('Amazon ignores prices in frequently bought together recommendations', () => {
+  const html = '<div id="p13n-desktop-sims-fbt_DetailPage_0"><span class="a-price"><span class="a-offscreen">221,35 €</span></span></div>';
+  assert.equal(extractPrice(html, 'https://www.amazon.de/dp/B0DWFMD52T'), null);
+});
+
+test('Amazon can extract a verified price-to-pay element', () => {
+  const html = '<div id="corePriceDisplay_desktop_feature_div"><span class="priceToPay"><span class="a-offscreen">249,00 €</span></span></div>';
+  assert.equal(extractPrice(html, 'https://www.amazon.de/dp/B0DWFMD52T'), 249);
+});
+
+test('extracts explicit microdata product prices without relying on domain', () => {
+  const html = '<meta itemprop="priceCurrency" content="EUR"><span itemprop="price" content="99.95"></span>';
+  assert.equal(extractPrice(html, 'https://example.com/products/item'), 99.95);
+});
+
 test('reject local, numeric and unusual URLs', () => {
   assert.equal(validUrl('http://127.0.0.1/admin'), false);
   assert.equal(validUrl('http://localhost:3000'), false);
