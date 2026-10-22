@@ -477,13 +477,10 @@ async function priceFromHtml(html, sourceUrl = '') {
       [currency]: await foreignUnitsPerEur(currency),
     });
   }
-  if (!price && /(^|\.)amazon\.[a-z.]+$/.test(host) &&
-      /(?:to see the product details,?\s*add this item to your basket|um produktdetails zu sehen,?\s*lege diesen artikel in deinen einkaufswagen)/i
-        .test(html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' '))) {
-    const err = new Error('Amazon скрива продажната цена на този продукт, докато не го добавиш в кошницата. Не мога да потвърдя надеждна цена за автоматично следене.');
-    err.code = 'AMAZON_PRICE_HIDDEN';
-    throw err;
-  }
+  // Amazon can mention "add to basket to see price" for an unrelated offer,
+  // recommendation or seller. Never classify the watched product as having a
+  // hidden price based on page-wide text: let the reliable price parser and
+  // the configured secondary provider decide whether a price can be verified.
   if (!price && pageIsChallenge(html)) {
     const err = new Error('Магазинът показа страница за проверка на достъпа, а не цена на продукт.');
     err.code = 'SITE_CHALLENGE';

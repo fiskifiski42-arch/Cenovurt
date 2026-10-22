@@ -274,16 +274,23 @@ test('HTML CAPTCHA challenge triggers fallback, never a false price', async () =
   }
 });
 
-test('hidden Amazon price returns its specific explanation instead of generic failure', async () => {
+test('Amazon add-to-cart text never blocks a provider check of the actual product price', async () => {
   const oldFetch = global.fetch, oldLookup = dns.lookup, oldKey = process.env.ZENROWS_API_KEY;
   try {
     dns.lookup = async () => [{ address: '1.1.1.1', family: 4 }];
     process.env.ZENROWS_API_KEY = 'testing-zenrows-key';
     let count = 0;
-    global.fetch = async () => {count++; return response(200,
-      '<html><body>To see the product details, add this item to your basket</body></html>');};
-    await assert.rejects(fetchProductPrice('https://www.amazon.de/dp/B0FH5QDTBQ'), /Amazon скрива продажната цена/);
-    assert.equal(count, 1);
+    const unrelatedSellerNote = '<html><body>To see the product details, add this item to your basket</body></html>';
+    const actualProductPrice = '<html><div id="corePriceDisplay_desktop_feature_div">' +
+      '<span class="a-price"><span class="a-offscreen">619,99 €</span></span></div></html>';
+    global.fetch = async () => response(200, ++count === 1 ? unrelatedSellerNote : actualProductPrice);
+    assert.equal(await fetchProductPrice('https://www.amazon.de/dp/B0FH5QDTBQ'), 619.99);
+    assert.equal(count, 2);
+
+    count = 0;
+    global.fetch = async () => response(200, ++count === 1 ? unrelatedSellerNote : '<html><p>No product offer</p></html>');
+    await assert.rejects(fetchProductPrice('https://www.amazon.de/dp/B0FH5QDTBQ'), /Не открих надеждна цена/);
+    assert.equal(count, 2);
   } finally {
     global.fetch = oldFetch; dns.lookup = oldLookup;
     if (oldKey === undefined) delete process.env.ZENROWS_API_KEY;
