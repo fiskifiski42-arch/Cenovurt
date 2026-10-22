@@ -399,7 +399,7 @@ function cleanProductURL(value) {
   // to the ASIN and can lead to locale-dependent or expired landing pages.
   // Keep the original marketplace (and thus its currency), but request the
   // canonical product URL from both the direct and the fallback providers.
-  if (/^(?:www\.)?amazon\.(?:com|co\.uk|de)$/.test(parsed.hostname.toLowerCase())) {
+  if (/^(?:www\.)?amazon\.(?:co\.uk|de)$/.test(parsed.hostname.toLowerCase())) {
     const product = parsed.pathname.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})(?:\/|$)/i);
     if (product) {
       parsed.pathname = '/dp/' + product[1].toUpperCase();
