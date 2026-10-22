@@ -30,17 +30,18 @@ test('stored session token recovers its email only when valid', async () => {
   assert.equal((await requestSession('POST', 'Bearer ' + token)).status, 405);
 });
 
-function browserFixture(sessionReply, initialEmail = '') {
+function browserFixture(sessionReply, initialEmail = '', initialSession = true) {
   const source = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
   const script = source.match(/<script>([\s\S]*?)<\/script>/)[1];
   const token = issueToken('saved@example.com');
-  const values = new Map([['cenovurt-session', token]]);
+  const values = new Map(initialSession ? [['cenovurt-session', token]] : []);
   if (initialEmail) values.set('cenovurt-email', initialEmail);
   const elements = new Map();
   const element = id => {
     if (!elements.has(id)) elements.set(id, {
       value: '', textContent: '', innerHTML: '', hidden: false,
-      addEventListener() {}, appendChild() {}, scrollIntoView() {},
+      addEventListener(type, handler) { (this.listeners ||= {})[type] = handler; },
+      appendChild() {}, scrollIntoView() {},
     });
     return elements.get(id);
   };
@@ -65,7 +66,7 @@ function browserFixture(sessionReply, initialEmail = '') {
   const context = { document, localStorage, fetch, URL, URLSearchParams, Intl, Date,
     location: { search: '', pathname: '/' }, history: { replaceState() {} } };
   vm.runInNewContext(script, context);
-  return { elements, values, requests };
+  return { elements, values, requests, context };
 }
 
 test('page refresh restores existing session and watches without another email code', async () => {
@@ -85,4 +86,43 @@ test('expired token is removed but email stays ready for one new verification', 
   assert.equal(fixture.values.has('cenovurt-session'), false);
   assert.equal(fixture.elements.get('accountEmail').value, 'saved@example.com');
   assert.deepEqual(fixture.requests, ['/api/session']);
+});
+
+test('logout clears this device and does not expose the previous user watches', async () => {
+  const fixture = browserFixture({ email: 'saved@example.com' });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(fixture.elements.get('loggedInBox').hidden, false);
+  assert.equal(fixture.elements.get('signedInEmail').textContent, 'saved@example.com');
+  fixture.context.logout();
+  assert.equal(fixture.values.has('cenovurt-session'), false);
+  assert.equal(fixture.values.has('cenovurt-email'), false);
+  assert.equal(fixture.elements.get('accountEmail').value, '');
+  assert.equal(fixture.elements.get('loginFields').hidden, false);
+  assert.equal(fixture.elements.get('loggedInBox').hidden, true);
+  assert.equal(fixture.elements.get('demoStartBox').hidden, false);
+  assert.doesNotMatch(fixture.elements.get('list').innerHTML, /example\.com\/item/);
+  assert.equal(fixture.requests.length, 3);
+});
+
+test('email-free demo uses illustrative local-only watches, no server calls', async () => {
+  const fixture = browserFixture({}, '', false);
+  await new Promise(resolve => setImmediate(resolve));
+  fixture.context.startDemo();
+  assert.equal(fixture.elements.get('demoBox').hidden, false);
+  assert.equal(fixture.elements.get('loginFields').hidden, true);
+  assert.match(fixture.elements.get('list').innerHTML, /Демо · не е реална цена/);
+  fixture.context.demoCheckOne('demo-example');
+  assert.match(fixture.elements.get('list').innerHTML, /Симулирана цена/);
+  fixture.context.document.getElementById('url').value = 'https://shop.example.org/headphones';
+  fixture.context.document.getElementById('price').value = '89,90';
+  await fixture.elements.get('watchForm').listeners.submit({
+    preventDefault() {},
+    target: { reset() {} },
+  });
+  assert.match(fixture.elements.get('list').innerHTML, /shop\.example\.org/);
+  assert.deepEqual(fixture.requests, []);
+  fixture.context.exitDemo();
+  assert.equal(fixture.elements.get('demoBox').hidden, true);
+  assert.doesNotMatch(fixture.elements.get('list').innerHTML, /Симулирана цена/);
+  assert.deepEqual(fixture.requests, []);
 });

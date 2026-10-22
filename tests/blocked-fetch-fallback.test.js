@@ -235,3 +235,58 @@ test('ZenRows HTTP 422 exposes a safe provider code and never invents a price', 
     else process.env.ZENROWS_API_KEY = oldKey;
   }
 });
+
+test('temporary HTTP 500 and a network failure both reach one fallback request', async () => {
+  const oldFetch = global.fetch, oldLookup = dns.lookup, oldKey = process.env.ZENROWS_API_KEY;
+  try {
+    dns.lookup = async () => [{ address: '1.1.1.1', family: 4 }];
+    process.env.ZENROWS_API_KEY = 'testing-zenrows-key';
+    for (const failure of [() => response(500), () => { throw new TypeError('fetch failed'); }]) {
+      let count = 0;
+      global.fetch = async () => ++count === 1 ? failure() : response(200, html);
+      assert.equal(await fetchProductPrice(url), 72.7);
+      assert.equal(count, 2);
+    }
+  } finally {
+    global.fetch = oldFetch; dns.lookup = oldLookup;
+    if (oldKey === undefined) delete process.env.ZENROWS_API_KEY;
+    else process.env.ZENROWS_API_KEY = oldKey;
+  }
+});
+
+test('HTML CAPTCHA challenge triggers fallback, never a false price', async () => {
+  const oldFetch = global.fetch, oldLookup = dns.lookup, oldKey = process.env.ZENROWS_API_KEY;
+  try {
+    dns.lookup = async () => [{ address: '1.1.1.1', family: 4 }];
+    process.env.ZENROWS_API_KEY = 'testing-zenrows-key';
+    const challenge = '<html><title>Just a moment</title><body><div class="cf-chl-widget">Checking</div></body></html>';
+    let count = 0;
+    global.fetch = async () => ++count === 1 ? response(200, challenge) : response(200, html);
+    assert.equal(await fetchProductPrice(url), 72.7);
+    assert.equal(count, 2);
+
+    global.fetch = async () => response(200, challenge);
+    await assert.rejects(fetchProductPrice(url), /страница за проверка на достъпа/);
+  } finally {
+    global.fetch = oldFetch; dns.lookup = oldLookup;
+    if (oldKey === undefined) delete process.env.ZENROWS_API_KEY;
+    else process.env.ZENROWS_API_KEY = oldKey;
+  }
+});
+
+test('hidden Amazon price returns its specific explanation instead of generic failure', async () => {
+  const oldFetch = global.fetch, oldLookup = dns.lookup, oldKey = process.env.ZENROWS_API_KEY;
+  try {
+    dns.lookup = async () => [{ address: '1.1.1.1', family: 4 }];
+    process.env.ZENROWS_API_KEY = 'testing-zenrows-key';
+    let count = 0;
+    global.fetch = async () => {count++; return response(200,
+      '<html><body>To see the product details, add this item to your basket</body></html>');};
+    await assert.rejects(fetchProductPrice('https://www.amazon.de/dp/B0FH5QDTBQ'), /Amazon скрива продажната цена/);
+    assert.equal(count, 1);
+  } finally {
+    global.fetch = oldFetch; dns.lookup = oldLookup;
+    if (oldKey === undefined) delete process.env.ZENROWS_API_KEY;
+    else process.env.ZENROWS_API_KEY = oldKey;
+  }
+});

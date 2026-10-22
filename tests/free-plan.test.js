@@ -46,6 +46,8 @@ test('JS and HTML frontend syntax valid',()=>{
 test('Vercel Hobby schedule is once a day',()=>{
   const conf=JSON.parse(fs.readFileSync(path.join(__dirname,'../vercel.json'),'utf8'));
   assert.equal(conf.crons[0].schedule,'17 9 * * *');
+  assert.equal(conf.functions['api/check-one.js'].maxDuration,60);
+  assert.equal(conf.functions['api/check.js'].maxDuration,60);
 });
 
 test('new user is Free 0/3 with no card', async()=> {

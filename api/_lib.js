@@ -314,6 +314,12 @@ function retailerPrice(html, sourceUrl, rates = {}) {
   return null;
 }
 
+function pageIsChallenge(html) {
+  // A challenge page is not the requested product page. Match explicit
+  // challenge markers, never a vague word like "security" on its own.
+  return /\bcf-chl-[\w-]+\b|\bcdn-cgi\/challenge-platform\b|\bchallenge-form\b|\bhcaptcha\b|\bg-recaptcha\b|<title>\s*(?:access denied|just a moment|attention required|robot check|captcha|403 forbidden)\s*<\/title>|<h[1-3][^>]*>\s*(?:verify you are human|access denied|robot check)\s*<\/h[1-3]>/i.test(html);
+}
+
 function extractPrice(html, sourceUrl = '', rates = {}) {
   if (typeof html !== 'string' || !html) return null;
   let sourceHost = '';
@@ -471,11 +477,16 @@ async function priceFromHtml(html, sourceUrl = '') {
       [currency]: await foreignUnitsPerEur(currency),
     });
   }
-  if (!price && /(^|\\.)amazon\\.[a-z.]+$/.test(host) &&
-      /(?:to see the product details,?\\s*add this item to your basket|um produktdetails zu sehen,?\\s*lege diesen artikel in deinen einkaufswagen)/i
-        .test(html.replace(/<[^>]+>/g, ' ').replace(/\\s+/g, ' '))) {
+  if (!price && /(^|\.)amazon\.[a-z.]+$/.test(host) &&
+      /(?:to see the product details,?\s*add this item to your basket|um produktdetails zu sehen,?\s*lege diesen artikel in deinen einkaufswagen)/i
+        .test(html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' '))) {
     const err = new Error('Amazon скрива продажната цена на този продукт, докато не го добавиш в кошницата. Не мога да потвърдя надеждна цена за автоматично следене.');
     err.code = 'AMAZON_PRICE_HIDDEN';
+    throw err;
+  }
+  if (!price && pageIsChallenge(html)) {
+    const err = new Error('Магазинът показа страница за проверка на достъпа, а не цена на продукт.');
+    err.code = 'SITE_CHALLENGE';
     throw err;
   }
   if (!price) {
@@ -513,7 +524,7 @@ async function directProductPrice(url) {
         err.code = 'BOT_BLOCKED';
         throw err;
       }
-      if ([502, 503, 504].includes(r.status)) {
+      if ([408, 425, 500, 502, 503, 504, 520, 521, 522, 523, 524].includes(r.status)) {
         // Some storefronts respond with a transient gateway/challenge page.
         // Give the already-configured fallback one chance instead of stopping.
         const err = new Error('Магазинът временно не предоставя страницата (HTTP ' + r.status + ').');
@@ -537,6 +548,11 @@ async function directProductPrice(url) {
       err.code = 'SOURCE_TIMEOUT';
       throw err;
     }
+    if (e instanceof TypeError) {
+      const err = new Error('Няма мрежов достъп до магазина. Ще опитам с резервния доставчик.');
+      err.code = 'SOURCE_NETWORK';
+      throw err;
+    }
     throw e;
   } finally { clearTimeout(timeout); }
 }
@@ -555,7 +571,7 @@ async function zenRowsProductPrice(url) {
   // 25-credit JS-render + premium-proxy configuration for every fallback.
   endpoint.searchParams.set('mode', 'auto');
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 22000);
+  const timeout = setTimeout(() => controller.abort(), 35000);
   try {
     const r = await fetch(endpoint.href, { redirect: 'manual', signal: controller.signal });
     if (r.status === 401 || r.status === 403) throw new Error('ZenRows: провери API ключа и достъпа си.');
@@ -609,7 +625,7 @@ async function zenRowsProductPrice(url) {
     }
     return priceFromHtml(html, target.href);
   } catch (e) {
-    if (e.name === 'AbortError') throw new Error('ZenRows не отговори до 22 секунди.');
+    if (e.name === 'AbortError') throw new Error('ZenRows не отговори до 35 секунди.');
     throw e;
   } finally { clearTimeout(timeout); }
 }
@@ -619,7 +635,7 @@ async function fetchProductPrice(url) {
     return await directProductPrice(url);
   } catch (err) {
     // Do not spend provider credits on nonexistent pages or invalid links.
-    if (!['BOT_BLOCKED', 'NO_PRICE', 'SOURCE_TIMEOUT', 'SOURCE_UNAVAILABLE'].includes(err.code)) throw err;
+    if (!['BOT_BLOCKED', 'NO_PRICE', 'SITE_CHALLENGE', 'SOURCE_TIMEOUT', 'SOURCE_UNAVAILABLE', 'SOURCE_NETWORK'].includes(err.code)) throw err;
     if (!process.env.ZENROWS_API_KEY) {
       if (err.code === 'BOT_BLOCKED') {
         throw new Error(err.message + ' Добави ZENROWS_API_KEY във Vercel за резервна проверка.');
