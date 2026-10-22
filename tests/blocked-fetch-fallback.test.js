@@ -30,8 +30,9 @@ test('HTTP 403 uses paid-provider fallback only when a key is configured', async
     assert.ok(!calls[0].includes('utm_source'));
     assert.ok(calls[1].startsWith('https://api.zenrows.com/v1/'));
     const args = new URL(calls[1]).searchParams;
-    assert.equal(args.get('js_render'), 'true');
-    assert.equal(args.get('premium_proxy'), 'true');
+    assert.equal(args.get('mode'), 'auto');
+    assert.equal(args.get('js_render'), null);
+    assert.equal(args.get('premium_proxy'), null);
     assert.ok(!args.get('url').includes('utm_source'));
   } finally {
     global.fetch = previousFetch;
@@ -152,6 +153,28 @@ test('ZenRows text-only page without markup never guesses a price', async () => 
     global.fetch = async () => ++count === 1 ? response(403)
       : response(200, 'price 5,00 EUR', 'text/plain');
     await assert.rejects(fetchProductPrice(url), /не върна HTML съдържание/);
+  } finally {
+    global.fetch = oldFetch; dns.lookup = oldLookup;
+    if (oldKey === undefined) delete process.env.ZENROWS_API_KEY;
+    else process.env.ZENROWS_API_KEY = oldKey;
+  }
+});
+
+test('ZenRows HTTP 422 exposes a safe provider code and never invents a price', async () => {
+  const oldFetch = global.fetch, oldLookup = dns.lookup, oldKey = process.env.ZENROWS_API_KEY;
+  try {
+    dns.lookup = async () => [{ address: '1.1.1.1', family: 4 }];
+    process.env.ZENROWS_API_KEY = 'testing-zenrows-key';
+    const calls = [];
+    global.fetch = async requested => {
+      calls.push(String(requested));
+      return calls.length === 1 ? response(403) : response(422,
+        JSON.stringify({ code: 'RESP001', title: 'Target website did not respond' }),
+        'application/json');
+    };
+    await assert.rejects(fetchProductPrice(url), /HTTP 422, код RESP001/);
+    assert.equal(calls.length, 2);
+    assert.equal(new URL(calls[1]).searchParams.get('mode'), 'auto');
   } finally {
     global.fetch = oldFetch; dns.lookup = oldLookup;
     if (oldKey === undefined) delete process.env.ZENROWS_API_KEY;
