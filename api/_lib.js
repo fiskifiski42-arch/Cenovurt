@@ -395,6 +395,19 @@ function extractPrice(html, sourceUrl = '', rates = {}) {
 // Remove advertising tracking that should not affect product identity or price.
 function cleanProductURL(value) {
   const parsed = productURL(value);
+  // Amazon product links often carry ad/session parameters that are unrelated
+  // to the ASIN and can lead to locale-dependent or expired landing pages.
+  // Keep the original marketplace (and thus its currency), but request the
+  // canonical product URL from both the direct and the fallback providers.
+  if (/^(?:www\.)?amazon\.(?:com|co\.uk|de)$/.test(parsed.hostname.toLowerCase())) {
+    const product = parsed.pathname.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})(?:\/|$)/i);
+    if (product) {
+      parsed.pathname = '/dp/' + product[1].toUpperCase();
+      parsed.search = '';
+      parsed.hash = '';
+      return parsed;
+    }
+  }
   for (const key of [...parsed.searchParams.keys()]) {
     if (/^(utm_.*|gclid|fbclid|msclkid)$/i.test(key)) parsed.searchParams.delete(key);
   }
@@ -500,6 +513,13 @@ async function directProductPrice(url) {
         err.code = 'BOT_BLOCKED';
         throw err;
       }
+      if ([502, 503, 504].includes(r.status)) {
+        // Some storefronts respond with a transient gateway/challenge page.
+        // Give the already-configured fallback one chance instead of stopping.
+        const err = new Error('Магазинът временно не предоставя страницата (HTTP ' + r.status + ').');
+        err.code = 'SOURCE_UNAVAILABLE';
+        throw err;
+      }
       if (!r.ok) throw new Error('Магазинът върна HTTP ' + r.status + '.');
       const type = r.headers.get('content-type') || '';
       if (type && !/text\/html|application\/xhtml\+xml/i.test(type)) {
@@ -599,7 +619,7 @@ async function fetchProductPrice(url) {
     return await directProductPrice(url);
   } catch (err) {
     // Do not spend provider credits on nonexistent pages or invalid links.
-    if (!['BOT_BLOCKED', 'NO_PRICE', 'SOURCE_TIMEOUT'].includes(err.code)) throw err;
+    if (!['BOT_BLOCKED', 'NO_PRICE', 'SOURCE_TIMEOUT', 'SOURCE_UNAVAILABLE'].includes(err.code)) throw err;
     if (!process.env.ZENROWS_API_KEY) {
       if (err.code === 'BOT_BLOCKED') {
         throw new Error(err.message + ' Добави ZENROWS_API_KEY във Vercel за резервна проверка.');

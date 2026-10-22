@@ -61,6 +61,60 @@ test('a normal direct result does not spend provider credits', async () => {
   }
 });
 
+test('Amazon.de canonicalizes a marketing link and uses ZenRows after HTTP 503', async () => {
+  const oldFetch = global.fetch, oldLookup = dns.lookup, oldKey = process.env.ZENROWS_API_KEY;
+  const productUrl = 'https://www.amazon.de/Bowers-Wilkins-Noise-Cancelling/dp/B0FH5QDTBQ?pf_rd_p=old&ref_=tracking';
+  const primaryPrice = '<html><div id="corePriceDisplay_desktop_feature_div">' +
+    '<span class="a-price"><span class="a-offscreen">545,00 €</span></span></div></html>';
+  const calls = [];
+  try {
+    dns.lookup = async () => [{ address: '1.1.1.1', family: 4 }];
+    process.env.ZENROWS_API_KEY = 'testing-zenrows-key';
+    global.fetch = async requested => {
+      const next = String(requested);
+      calls.push(next);
+      return next.startsWith('https://api.zenrows.com/') ? response(200, primaryPrice) : response(503);
+    };
+    assert.equal(await fetchProductPrice(productUrl), 545);
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0], 'https://www.amazon.de/dp/B0FH5QDTBQ');
+    assert.equal(new URL(calls[1]).searchParams.get('url'), calls[0]);
+  } finally {
+    global.fetch = oldFetch; dns.lookup = oldLookup;
+    if (oldKey === undefined) delete process.env.ZENROWS_API_KEY;
+    else process.env.ZENROWS_API_KEY = oldKey;
+  }
+});
+
+test('Amazon.co.uk recovers HTTP 503 and converts the confirmed GBP price', async () => {
+  const oldFetch = global.fetch, oldLookup = dns.lookup, oldKey = process.env.ZENROWS_API_KEY;
+  const productUrl = 'https://www.amazon.co.uk/ADAM-Audio-Studio-Monitor-Single/dp/B07BKVY3J1?pd_rd_w=tracking';
+  const primaryPrice = '<html><div id="corePriceDisplay_desktop_feature_div">' +
+    '<span class="a-price"><span class="a-offscreen">£169.00</span></span></div></html>';
+  const calls = [];
+  try {
+    dns.lookup = async () => [{ address: '1.1.1.1', family: 4 }];
+    process.env.ZENROWS_API_KEY = 'testing-zenrows-key';
+    global.fetch = async requested => {
+      const next = String(requested);
+      calls.push(next);
+      if (next.startsWith('https://api.zenrows.com/')) return response(200, primaryPrice);
+      if (next.startsWith('https://www.ecb.europa.eu/')) {
+        return response(200, "<Cube currency='USD' rate='1.10'/><Cube currency='GBP' rate='0.80'/>", 'application/xml');
+      }
+      return response(503);
+    };
+    assert.equal(await fetchProductPrice(productUrl), 211.25);
+    assert.equal(calls[0], 'https://www.amazon.co.uk/dp/B07BKVY3J1');
+    assert.equal(new URL(calls[1]).searchParams.get('url'), calls[0]);
+    assert.equal(calls.length, 3);
+  } finally {
+    global.fetch = oldFetch; dns.lookup = oldLookup;
+    if (oldKey === undefined) delete process.env.ZENROWS_API_KEY;
+    else process.env.ZENROWS_API_KEY = oldKey;
+  }
+});
+
 test('a blocked website without a provider key reports actionable error', async () => {
   const previousFetch = global.fetch;
   const previousLookup = dns.lookup;
