@@ -213,10 +213,27 @@ function parsePriceText(text) {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+// All app thresholds and displayed prices are in EUR. Currency-labelled
+// foreign prices must be converted using a verified live reference rate.
+function amountInEuros(value, currency = 'EUR', rates = {}) {
+  const amount = parsePriceText(value);
+  if (!amount) return null;
+  const unit = String(currency).trim().toUpperCase();
+  if (unit === 'BGN' || unit === 'ЛВ' || unit === 'ЛВ.') {
+    return Math.round(amount / 1.95583 * 100) / 100;
+  }
+  if (unit === 'EUR' || unit === '€') return amount;
+  const rate = Number(rates[unit]);
+  if (unit === 'USD' && Number.isFinite(rate) && rate > 0) {
+    return Math.round(amount / rate * 100) / 100;
+  }
+  return null;
+}
+
 // Retailer-specific hints complement standards-based Product JSON-LD. Keep them
 // conservative: a listing price, old crossed-out price or recommendation is
 // not proof of the watched product's current price.
-function retailerPrice(html, sourceUrl) {
+function retailerPrice(html, sourceUrl, rates = {}) {
   let host = '';
   try { host = new URL(sourceUrl).hostname.toLowerCase(); } catch { return null; }
 
@@ -236,10 +253,14 @@ function retailerPrice(html, sourceUrl) {
   if (/(^|\.)amazon\.[a-z.]+$/.test(host)) {
     // Only inspect the watched item's own price widgets, not recommendations
     // or crossed-out list prices elsewhere on an Amazon detail page.
-    const euro = value => /(?:€|EUR)/i.test(value) ? parsePriceText(value) : null;
+    const amazonMoney = value => {
+      const unit = /(?:€|EUR)/i.test(value) ? 'EUR' :
+        /(?:USD|\$)/i.test(value) ? 'USD' : null;
+      return unit ? amountInEuros(value, unit, rates) : null;
+    };
     const fixed = html.match(/<[^>]*id=["'](?:priceblock_(?:ourprice|dealprice|saleprice)|price_inside_buybox)["'][^>]*>\s*([^<]+)</i);
     if (fixed) {
-      const amount = euro(fixed[1]);
+      const amount = amazonMoney(fixed[1]);
       if (amount) return amount;
     }
 
@@ -259,7 +280,7 @@ function retailerPrice(html, sourceUrl) {
       // The visible deal price takes priority over any list or typical price.
       const toPay = panel.match(/<[^>]*class=["'][^"']*(?:priceToPay|apexPriceToPay)[^"']*["'][^>]*>[\s\S]{0,3000}?<span\b[^>]*class=["'][^"']*\ba-offscreen\b[^"']*["'][^>]*>\s*([^<]+)</i);
       if (toPay) {
-        const amount = euro(toPay[1]);
+        const amount = amazonMoney(toPay[1]);
         if (amount) return amount;
       }
 
@@ -268,7 +289,7 @@ function retailerPrice(html, sourceUrl) {
       for (const price of panel.matchAll(prices)) {
         const classes = price[1].split(/\s+/);
         if (!classes.includes('a-price') || classes.includes('a-text-price')) continue;
-        const amount = euro(price[2]);
+        const amount = amazonMoney(price[2]);
         if (amount) return amount;
       }
 
@@ -276,11 +297,13 @@ function retailerPrice(html, sourceUrl) {
       const split = panel.match(/<span\b[^>]*class=["'][^"']*\ba-price-whole\b[^"']*["'][^>]*>\s*([0-9.,]+)(?:<[^>]+>[^<]*<\/[^>]+>)*\s*<\/span>\s*<span\b[^>]*class=["'][^"']*\ba-price-fraction\b[^"']*["'][^>]*>\s*(\d{2})/i);
       if (split) {
         const around = panel.slice(Math.max(0, split.index - 260), split.index + split[0].length);
-        if (/(?:€|EUR)/i.test(around) && !/\ba-text-price\b/.test(around)) {
+        if (!/\ba-text-price\b/.test(around)) {
+          const unit = /(?:€|EUR)/i.test(around) ? 'EUR' :
+            /(?:USD|\$)/i.test(around) ? 'USD' : null;
           const whole = Number(split[1].replace(/[.,]/g, ''));
           const cents = Number(split[2]);
-          if (Number.isFinite(whole) && Number.isFinite(cents) && whole > 0) {
-            return whole + cents / 100;
+          if (unit && Number.isFinite(whole) && Number.isFinite(cents) && whole > 0) {
+            return amountInEuros(whole + cents / 100, unit, rates);
           }
         }
       }
@@ -289,8 +312,11 @@ function retailerPrice(html, sourceUrl) {
   return null;
 }
 
-function extractPrice(html, sourceUrl = '') {
+function extractPrice(html, sourceUrl = '', rates = {}) {
   if (typeof html !== 'string' || !html) return null;
+  let sourceHost = '';
+  try { sourceHost = new URL(sourceUrl).hostname.toLowerCase(); } catch {}
+  const amazonCom = sourceHost === 'amazon.com' || sourceHost.endsWith('.amazon.com');
   const parseAttributes = tag => {
     const attrs = {};
     for (const match of tag.matchAll(/([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) {
@@ -298,21 +324,13 @@ function extractPrice(html, sourceUrl = '') {
     }
     return attrs;
   };
-  const eur = (value, currency = 'EUR') => {
-    const amount = parsePriceText(value);
-    if (!amount) return null;
-    const unit = String(currency).trim().toUpperCase();
-    if (unit === 'BGN' || unit === 'ЛВ' || unit === 'ЛВ.') {
-      return Math.round(amount / 1.95583 * 100) / 100;
-    }
-    return unit === 'EUR' || unit === '€' ? amount : null;
-  };
-  const shopPrice = retailerPrice(html, sourceUrl);
+  const eur = (value, currency = 'EUR') => amountInEuros(value, currency, rates);
+  const shopPrice = retailerPrice(html, sourceUrl, rates);
   if (shopPrice) return shopPrice;
   const metas = [...html.matchAll(/<meta\b[^>]*>/gi)].map(m => parseAttributes(m[0]));
   const metaName = m => String(m.property || m.itemprop || m.name || '').toLowerCase();
   const curr = metas.find(m => ['product:price:currency','og:price:currency','pricecurrency'].includes(metaName(m)));
-  const currency = curr?.content || 'EUR';
+  const currency = curr?.content || (amazonCom ? 'UNKNOWN' : 'EUR');
   for (const m of metas) {
     if (['product:price:amount','og:price:amount','price'].includes(metaName(m))) {
       const value = eur(m.content, currency);
@@ -337,7 +355,7 @@ function extractPrice(html, sourceUrl = '') {
     }
     if (!offer || typeof offer !== 'object') return null;
     const amount = offer.price ?? offer.lowPrice ?? offer.priceSpecification?.price;
-    const unit = offer.priceCurrency ?? offer.priceSpecification?.priceCurrency ?? 'EUR';
+    const unit = offer.priceCurrency ?? offer.priceSpecification?.priceCurrency ?? (amazonCom ? 'UNKNOWN' : 'EUR');
     return eur(amount, unit);
   };
   const scan = data => {
@@ -360,8 +378,6 @@ function extractPrice(html, sourceUrl = '') {
 
   // Amazon pages frequently contain unrelated recommendation prices. Do not
   // fall back to generic page-wide text on this domain.
-  let sourceHost = '';
-  try { sourceHost = new URL(sourceUrl).hostname.toLowerCase(); } catch {}
   if (/(^|\.)amazon\.[a-z.]+$/.test(sourceHost)) return null;
 
   // Only currency-labelled amounts are accepted as fallback. Unknown values are not guessed.
@@ -383,11 +399,49 @@ function cleanProductURL(value) {
   return parsed;
 }
 
-function priceFromHtml(html, sourceUrl = '') {
+let cachedUsdPerEur = null;
+let cachedUsdPerEurAt = 0;
+
+async function usdPerEur() {
+  if (cachedUsdPerEur && Date.now() - cachedUsdPerEurAt < 6 * 3600000) {
+    return cachedUsdPerEur;
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 6000);
+  try {
+    const response = await fetch('https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml', {
+      signal: controller.signal,
+      headers: { Accept: 'application/xml,text/xml' },
+    });
+    if (!response.ok) throw new Error('ECB HTTP ' + response.status);
+    const xml = await response.text();
+    if (xml.length > 100000) throw new Error('Invalid ECB response');
+    const match = xml.match(/<Cube\b[^>]*\bcurrency=['"]USD['"][^>]*\brate=['"]([0-9.]+)['"]/i);
+    const rate = match ? Number(match[1]) : NaN;
+    if (!Number.isFinite(rate) || rate < 0.4 || rate > 2) throw new Error('Invalid ECB USD rate');
+    cachedUsdPerEur = rate;
+    cachedUsdPerEurAt = Date.now();
+    return rate;
+  } catch {
+    const err = new Error('Не успях да проверя курса USD/EUR от ЕЦБ. Опитай пак по-късно.');
+    err.code = 'FX_RATE_UNAVAILABLE';
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function priceFromHtml(html, sourceUrl = '') {
   if (typeof html !== 'string' || html.length > 3000000) {
     throw new Error('Страницата е прекалено голяма или невалидна.');
   }
-  const price = extractPrice(html, sourceUrl);
+  let price = extractPrice(html, sourceUrl);
+  let host = '';
+  try { host = new URL(sourceUrl).hostname.toLowerCase(); } catch {}
+  if (!price && (host === 'amazon.com' || host.endsWith('.amazon.com')) &&
+      /(?:\$\s*[0-9]|USD\b)/i.test(html)) {
+    price = extractPrice(html, sourceUrl, { USD: await usdPerEur() });
+  }
   if (!price) {
     const err = new Error('Не открих надеждна цена за този продукт.');
     err.code = 'NO_PRICE';
