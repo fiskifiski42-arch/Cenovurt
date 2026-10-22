@@ -458,6 +458,13 @@ async function priceFromHtml(html, sourceUrl = '') {
       [currency]: await foreignUnitsPerEur(currency),
     });
   }
+  if (!price && /(^|\\.)amazon\\.[a-z.]+$/.test(host) &&
+      /(?:to see the product details,?\\s*add this item to your basket|um produktdetails zu sehen,?\\s*lege diesen artikel in deinen einkaufswagen)/i
+        .test(html.replace(/<[^>]+>/g, ' ').replace(/\\s+/g, ' '))) {
+    const err = new Error('Amazon скрива продажната цена на този продукт, докато не го добавиш в кошницата. Не мога да потвърдя надеждна цена за автоматично следене.');
+    err.code = 'AMAZON_PRICE_HIDDEN';
+    throw err;
+  }
   if (!price) {
     const err = new Error('Не открих надеждна цена за този продукт.');
     err.code = 'NO_PRICE';
