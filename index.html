@@ -109,8 +109,7 @@
   let sessionToken=localStorage.getItem('cenovurt-session')||'';
   const $=id=>document.getElementById(id);
   const emailEl=$('accountEmail');
-  localStorage.removeItem('cenovurt-email');
-  emailEl.value='';
+  emailEl.value=localStorage.getItem('cenovurt-email')||'';
 
   function normalizeEmail(v){return String(v||'').trim().toLowerCase()}
   function validEmail(v){return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeEmail(v))}
@@ -119,7 +118,7 @@
   function esc(v){return String(v??'').replace(/[&<>'"\u0060]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;','\u0060':'&#96;'}[c]))}
   function show(text,err=false,info=false){const box=$('message');box.textContent='';if(!text)return;const n=document.createElement('div');n.className='notice '+(err?'err':info?'info':'');n.textContent=String(text);box.appendChild(n)}
   function currentEmail(){return normalizeEmail(emailEl.value)}
-  async function api(path,opts={}){const headers={'Content-Type':'application/json',...(opts.headers||{})};if(sessionToken)headers.Authorization='Bearer '+sessionToken;const r=await fetch(path,{...opts,headers});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'Грешка '+r.status);return d}
+  async function api(path,opts={}){const headers={'Content-Type':'application/json',...(opts.headers||{})};if(sessionToken)headers.Authorization='Bearer '+sessionToken;const r=await fetch(path,{...opts,headers});const d=await r.json().catch(()=>({}));if(!r.ok){const error=new Error(d.error||'Грешка '+r.status);error.status=r.status;throw error}return d}
 
   function renderAccount(){
     $('accountBox').hidden=!account;
@@ -157,6 +156,7 @@
     try{
       const d=await api('/api/confirm-login',{method:'POST',body:JSON.stringify({email,code})});
       sessionToken=d.token;localStorage.setItem('cenovurt-session',sessionToken);
+      localStorage.setItem('cenovurt-email',email);
       $('loginCodeBox').hidden=true;$('loginCode').value='';
       if(new URLSearchParams(location.search).has('session_id'))await verifyPayment();
       else await loadAccount(true);
@@ -170,8 +170,29 @@
     try{
       const [a,w]=await Promise.all([api(`/api/account?email=${encodeURIComponent(email)}`),api(`/api/watches?email=${encodeURIComponent(email)}`)]);
       account=a; watches=w.watches||[]; renderAccount(); renderWatches();
+      localStorage.setItem('cenovurt-email',email);
       if(verbose) show(`Активен план ${account.plan} · ${account.used}/${account.limit === null ? '∞' : account.limit} продукта. ${account.paid?'':'Безплатен достъп, без карта.'}`,false,true);
-    }catch(e){show(e.message,true)}
+    }catch(e){
+      if(e.status===401){sessionToken='';localStorage.removeItem('cenovurt-session');account=null;watches=[];renderAccount();renderWatches();show('Сесията е изтекла. Потвърди отново имейла си с код.',true)}
+      else show(e.message,true);
+    }
+  }
+
+  async function restoreSession(){
+    if(!sessionToken){await verifyPayment();return}
+    try{
+      // Verify the saved token on the server before trusting its owner email.
+      const d=await api('/api/session');
+      emailEl.value=d.email;
+      localStorage.setItem('cenovurt-email',d.email);
+      if(new URLSearchParams(location.search).has('payment'))await verifyPayment();
+      else await loadAccount(false);
+    }catch(e){
+      if(e.status===401){
+        sessionToken='';localStorage.removeItem('cenovurt-session');
+        show('Сесията е изтекла. Имейлът е запазен — нужен е само нов код за вход.',true);
+      }else show('Не успях да възстановя профила: '+e.message,true);
+    }
   }
 
   async function startFree(){
@@ -214,7 +235,7 @@
   async function sendTestEmail(){const email=currentEmail(); if(!validEmail(email)) return show('Въведи валиден email.',true); show('Изпращам тестов email…',false,true); try{await api('/api/test-alert',{method:'POST',body:JSON.stringify({email})}); show(`Тестовият email е изпратен до ${email}.`)}catch(e){show(e.message,true)}}
   function scrollToPricing(){document.getElementById('pricing').scrollIntoView({behavior:'smooth'})}
 
-  verifyPayment();
+  restoreSession();
 </script>
 </body>
 </html>
