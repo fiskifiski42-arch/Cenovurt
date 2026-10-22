@@ -224,7 +224,7 @@ function amountInEuros(value, currency = 'EUR', rates = {}) {
   }
   if (unit === 'EUR' || unit === '€') return amount;
   const rate = Number(rates[unit]);
-  if (unit === 'USD' && Number.isFinite(rate) && rate > 0) {
+  if ((unit === 'USD' || unit === 'GBP') && Number.isFinite(rate) && rate > 0) {
     return Math.round(amount / rate * 100) / 100;
   }
   return null;
@@ -255,6 +255,7 @@ function retailerPrice(html, sourceUrl, rates = {}) {
     // or crossed-out list prices elsewhere on an Amazon detail page.
     const amazonMoney = value => {
       const unit = /(?:€|EUR)/i.test(value) ? 'EUR' :
+        /(?:£|GBP)/i.test(value) ? 'GBP' :
         /(?:USD|\$)/i.test(value) ? 'USD' : null;
       return unit ? amountInEuros(value, unit, rates) : null;
     };
@@ -299,6 +300,7 @@ function retailerPrice(html, sourceUrl, rates = {}) {
         const around = panel.slice(Math.max(0, split.index - 260), split.index + split[0].length);
         if (!/\ba-text-price\b/.test(around)) {
           const unit = /(?:€|EUR)/i.test(around) ? 'EUR' :
+            /(?:£|GBP)/i.test(around) ? 'GBP' :
             /(?:USD|\$)/i.test(around) ? 'USD' : null;
           const whole = Number(split[1].replace(/[.,]/g, ''));
           const cents = Number(split[2]);
@@ -316,7 +318,8 @@ function extractPrice(html, sourceUrl = '', rates = {}) {
   if (typeof html !== 'string' || !html) return null;
   let sourceHost = '';
   try { sourceHost = new URL(sourceUrl).hostname.toLowerCase(); } catch {}
-  const amazonCom = sourceHost === 'amazon.com' || sourceHost.endsWith('.amazon.com');
+  const foreignAmazon = ['amazon.com', 'amazon.co.uk'].some(host =>
+    sourceHost === host || sourceHost.endsWith('.' + host));
   const parseAttributes = tag => {
     const attrs = {};
     for (const match of tag.matchAll(/([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) {
@@ -330,7 +333,7 @@ function extractPrice(html, sourceUrl = '', rates = {}) {
   const metas = [...html.matchAll(/<meta\b[^>]*>/gi)].map(m => parseAttributes(m[0]));
   const metaName = m => String(m.property || m.itemprop || m.name || '').toLowerCase();
   const curr = metas.find(m => ['product:price:currency','og:price:currency','pricecurrency'].includes(metaName(m)));
-  const currency = curr?.content || (amazonCom ? 'UNKNOWN' : 'EUR');
+  const currency = curr?.content || (foreignAmazon ? 'UNKNOWN' : 'EUR');
   for (const m of metas) {
     if (['product:price:amount','og:price:amount','price'].includes(metaName(m))) {
       const value = eur(m.content, currency);
@@ -355,7 +358,7 @@ function extractPrice(html, sourceUrl = '', rates = {}) {
     }
     if (!offer || typeof offer !== 'object') return null;
     const amount = offer.price ?? offer.lowPrice ?? offer.priceSpecification?.price;
-    const unit = offer.priceCurrency ?? offer.priceSpecification?.priceCurrency ?? (amazonCom ? 'UNKNOWN' : 'EUR');
+    const unit = offer.priceCurrency ?? offer.priceSpecification?.priceCurrency ?? (foreignAmazon ? 'UNKNOWN' : 'EUR');
     return eur(amount, unit);
   };
   const scan = data => {
@@ -399,12 +402,12 @@ function cleanProductURL(value) {
   return parsed;
 }
 
-let cachedUsdPerEur = null;
-let cachedUsdPerEurAt = 0;
+let cachedFxRates = {};
+let cachedFxRatesAt = 0;
 
-async function usdPerEur() {
-  if (cachedUsdPerEur && Date.now() - cachedUsdPerEurAt < 6 * 3600000) {
-    return cachedUsdPerEur;
+async function foreignUnitsPerEur(currency) {
+  if (cachedFxRates[currency] && Date.now() - cachedFxRatesAt < 6 * 3600000) {
+    return cachedFxRates[currency];
   }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 6000);
@@ -416,14 +419,22 @@ async function usdPerEur() {
     if (!response.ok) throw new Error('ECB HTTP ' + response.status);
     const xml = await response.text();
     if (xml.length > 100000) throw new Error('Invalid ECB response');
-    const match = xml.match(/<Cube\b[^>]*\bcurrency=['"]USD['"][^>]*\brate=['"]([0-9.]+)['"]/i);
-    const rate = match ? Number(match[1]) : NaN;
-    if (!Number.isFinite(rate) || rate < 0.4 || rate > 2) throw new Error('Invalid ECB USD rate');
-    cachedUsdPerEur = rate;
-    cachedUsdPerEurAt = Date.now();
-    return rate;
+    const rates = {};
+    for (const unit of ['USD', 'GBP']) {
+      const match = xml.match(new RegExp('<Cube\\b[^>]*\\bcurrency=[\\x27"]' + unit +
+        '[\\x27"][^>]*\\brate=[\\x27"]([0-9.]+)[\\x27"]', 'i'));
+      const rate = match ? Number(match[1]) : NaN;
+      if (!Number.isFinite(rate) || rate < 0.4 || rate > 2) {
+        throw new Error('Invalid ECB ' + unit + ' rate');
+      }
+      rates[unit] = rate;
+    }
+    cachedFxRates = rates;
+    cachedFxRatesAt = Date.now();
+    return rates[currency];
   } catch {
-    const err = new Error('Не успях да проверя курса USD/EUR от ЕЦБ. Опитай пак по-късно.');
+    const err = new Error('Не успях да проверя курса ' + currency +
+      '/EUR от ЕЦБ. Опитай пак по-късно.');
     err.code = 'FX_RATE_UNAVAILABLE';
     throw err;
   } finally {
@@ -438,9 +449,14 @@ async function priceFromHtml(html, sourceUrl = '') {
   let price = extractPrice(html, sourceUrl);
   let host = '';
   try { host = new URL(sourceUrl).hostname.toLowerCase(); } catch {}
-  if (!price && (host === 'amazon.com' || host.endsWith('.amazon.com')) &&
-      /(?:\$\s*[0-9]|USD\b)/i.test(html)) {
-    price = extractPrice(html, sourceUrl, { USD: await usdPerEur() });
+  const currency = (host === 'amazon.com' || host.endsWith('.amazon.com')) ? 'USD' :
+    (host === 'amazon.co.uk' || host.endsWith('.amazon.co.uk')) ? 'GBP' : null;
+  const hasCurrency = currency === 'USD' ? /(?:\$\s*[0-9]|USD\b)/i.test(html) :
+    currency === 'GBP' ? /(?:£\s*[0-9]|GBP\b)/i.test(html) : false;
+  if (!price && hasCurrency) {
+    price = extractPrice(html, sourceUrl, {
+      [currency]: await foreignUnitsPerEur(currency),
+    });
   }
   if (!price) {
     const err = new Error('Не открих надеждна цена за този продукт.');
