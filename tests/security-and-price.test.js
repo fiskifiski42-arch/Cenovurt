@@ -79,6 +79,15 @@ test('Amazon.com does not assume an unlabelled dollar product price is EUR', () 
   assert.equal(extractPrice(html, 'https://www.amazon.com/dp/B0HF8P2DWG', { USD: 1.12 }), null);
 });
 
+test('Amazon.co.uk converts primary GBP prices to EUR and rejects missing rates', () => {
+  const html = '<div id="corePriceDisplay_desktop_feature_div">' +
+    '<span class="a-price a-text-price"><span class="a-offscreen">£199.00</span></span>' +
+    '<span class="a-price"><span class="a-offscreen">£169.00</span></span></div>';
+  const link = 'https://www.amazon.co.uk/dp/B0HF8P2DWG';
+  assert.equal(extractPrice(html, link), null);
+  assert.equal(extractPrice(html, link, { GBP: 0.84 }), 201.19);
+});
+
 test('Amazon.com refuses unrelated recommendations even with a USD/EUR rate', () => {
   const html = '<div id="p13n-desktop-sims-fbt_DetailPage_0"><span class="a-price">' +
     '<span class="a-offscreen">$19.99</span></span></div>';
