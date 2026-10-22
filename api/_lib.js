@@ -234,12 +234,57 @@ function retailerPrice(html, sourceUrl) {
   }
 
   if (/(^|\.)amazon\.[a-z.]+$/.test(host)) {
-    // Amazon can render hundreds of recommendations before or after the item.
-    // Only accept the primary buy-box price, never an arbitrary a-offscreen price.
-    const fixed = html.match(/<[^>]*id=["']priceblock_(?:ourprice|dealprice|saleprice)["'][^>]*>\s*([^<]+)</i);
-    if (fixed && /€|EUR/.test(fixed[1])) return parsePriceText(fixed[1]);
-    const toPay = html.match(/<span\b[^>]*class=["'][^"']*(?:priceToPay|apexPriceToPay)[^"']*["'][^>]*>[\s\S]{0,900}?<span\b[^>]*class=["'][^"']*a-offscreen[^"']*["'][^>]*>\s*([^<]+)</i);
-    if (toPay && /€|EUR/.test(toPay[1])) return parsePriceText(toPay[1]);
+    // Only inspect the watched item's own price widgets, not recommendations
+    // or crossed-out list prices elsewhere on an Amazon detail page.
+    const euro = value => /(?:€|EUR)/i.test(value) ? parsePriceText(value) : null;
+    const fixed = html.match(/<[^>]*id=["'](?:priceblock_(?:ourprice|dealprice|saleprice)|price_inside_buybox)["'][^>]*>\s*([^<]+)</i);
+    if (fixed) {
+      const amount = euro(fixed[1]);
+      if (amount) return amount;
+    }
+
+    const mainWidgets = [
+      'corePriceDisplay_desktop_feature_div',
+      'corePriceDisplay_mobile_feature_div',
+      'corePrice_feature_div',
+      'apex_desktop',
+      'desktop_buybox',
+      'mobile_buybox',
+    ];
+    for (const widget of mainWidgets) {
+      const index = html.search(new RegExp('\\bid\\s*=\\s*["\\x27]' + widget + '["\\x27]', 'i'));
+      if (index < 0) continue;
+      const panel = html.slice(index, index + 9000);
+
+      // The visible deal price takes priority over any list or typical price.
+      const toPay = panel.match(/<[^>]*class=["'][^"']*(?:priceToPay|apexPriceToPay)[^"']*["'][^>]*>[\s\S]{0,3000}?<span\b[^>]*class=["'][^"']*\ba-offscreen\b[^"']*["'][^>]*>\s*([^<]+)</i);
+      if (toPay) {
+        const amount = euro(toPay[1]);
+        if (amount) return amount;
+      }
+
+      // Amazon also places the current price in a plain a-price wrapper.
+      const prices = /<span\b[^>]*class=["']([^"']*)["'][^>]*>[\s\S]{0,1500}?<span\b[^>]*class=["'][^"']*\ba-offscreen\b[^"']*["'][^>]*>\s*([^<]+)</gi;
+      for (const price of panel.matchAll(prices)) {
+        const classes = price[1].split(/\s+/);
+        if (!classes.includes('a-price') || classes.includes('a-text-price')) continue;
+        const amount = euro(price[2]);
+        if (amount) return amount;
+      }
+
+      // A few variants omit the accessibility price and split euros/cents.
+      const split = panel.match(/<span\b[^>]*class=["'][^"']*\ba-price-whole\b[^"']*["'][^>]*>\s*([0-9.,]+)(?:<[^>]+>[^<]*<\/[^>]+>)*\s*<\/span>\s*<span\b[^>]*class=["'][^"']*\ba-price-fraction\b[^"']*["'][^>]*>\s*(\d{2})/i);
+      if (split) {
+        const around = panel.slice(Math.max(0, split.index - 260), split.index + split[0].length);
+        if (/(?:€|EUR)/i.test(around) && !/\ba-text-price\b/.test(around)) {
+          const whole = Number(split[1].replace(/[.,]/g, ''));
+          const cents = Number(split[2]);
+          if (Number.isFinite(whole) && Number.isFinite(cents) && whole > 0) {
+            return whole + cents / 100;
+          }
+        }
+      }
+    }
   }
   return null;
 }
