@@ -57,6 +57,34 @@ test('Amazon can read euro cents when the primary price lacks a-offscreen', () =
   assert.equal(extractPrice(html, 'https://www.amazon.de/dp/B0DWFMD52T'), 1299.95);
 });
 
+test('Amazon.com reads USD buy-box prices only with a verified USD/EUR rate', () => {
+  const html = '<div id="corePriceDisplay_desktop_feature_div">' +
+    '<span class="a-price a-text-price"><span class="a-offscreen">$349.00</span></span>' +
+    '<span class="a-price"><span class="a-offscreen">$299.00</span></span></div>';
+  const link = 'https://www.amazon.com/dp/B0HF8P2DWG';
+  assert.equal(extractPrice(html, link), null);
+  assert.equal(extractPrice(html, link, { USD: 1.12 }), 266.96);
+});
+
+test('Amazon.com converts USD Product JSON-LD without confusing it with EUR', () => {
+  const html = '<script type="application/ld+json">' +
+    '{"@type":"Product","offers":{"price":"112.00","priceCurrency":"USD"}}</script>';
+  assert.equal(extractPrice(html, 'https://www.amazon.com/dp/B0HF8P2DWG'), null);
+  assert.equal(extractPrice(html, 'https://www.amazon.com/dp/B0HF8P2DWG', { USD: 1.12 }), 100);
+});
+
+test('Amazon.com does not assume an unlabelled dollar product price is EUR', () => {
+  const html = '<meta property="product:price:amount" content="299.00">';
+  assert.equal(extractPrice(html, 'https://www.amazon.com/dp/B0HF8P2DWG'), null);
+  assert.equal(extractPrice(html, 'https://www.amazon.com/dp/B0HF8P2DWG', { USD: 1.12 }), null);
+});
+
+test('Amazon.com refuses unrelated recommendations even with a USD/EUR rate', () => {
+  const html = '<div id="p13n-desktop-sims-fbt_DetailPage_0"><span class="a-price">' +
+    '<span class="a-offscreen">$19.99</span></span></div>';
+  assert.equal(extractPrice(html, 'https://www.amazon.com/dp/B0HF8P2DWG', { USD: 1.12 }), null);
+});
+
 test('Amazon does not read an unrelated offer when the primary price is missing', () => {
   const html = '<div id="p13n-desktop-sims-fbt_DetailPage_0">' +
     '<span class="a-price"><span class="a-offscreen">19,99 €</span></span></div>';
