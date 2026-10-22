@@ -35,6 +35,34 @@ test('Amazon can extract a verified price-to-pay element', () => {
   assert.equal(extractPrice(html, 'https://www.amazon.de/dp/B0DWFMD52T'), 249);
 });
 
+test('Amazon reads current desktop price without priceToPay and ignores struck-through prices', () => {
+  const html = '<div id="corePriceDisplay_desktop_feature_div">' +
+    '<span class="a-price a-text-price"><span class="a-offscreen">349,00 €</span></span>' +
+    '<span class="a-price aok-align-center"><span class="a-offscreen">249,00 €</span></span></div>';
+  assert.equal(extractPrice(html, 'https://www.amazon.de/dp/B0DWFMD52T'), 249);
+});
+
+test('Amazon reads a mobile price widget with a deeper price-to-pay wrapper', () => {
+  const html = '<div id="corePriceDisplay_mobile_feature_div"><span class="priceToPay">' +
+    '<span class="a-size-small"></span>'.repeat(35) +
+    '<span class="a-price"><span class="a-offscreen">129,99 €</span></span></span></div>';
+  assert.equal(extractPrice(html, 'https://www.amazon.de/dp/B0DWFMD52T'), 129.99);
+});
+
+test('Amazon can read euro cents when the primary price lacks a-offscreen', () => {
+  const html = '<div id="corePrice_feature_div"><span class="a-price">' +
+    '<span class="a-price-symbol">€</span><span class="a-price-whole">1.299' +
+    '<span class="a-price-decimal">,</span></span>' +
+    '<span class="a-price-fraction">95</span></span></div>';
+  assert.equal(extractPrice(html, 'https://www.amazon.de/dp/B0DWFMD52T'), 1299.95);
+});
+
+test('Amazon does not read an unrelated offer when the primary price is missing', () => {
+  const html = '<div id="p13n-desktop-sims-fbt_DetailPage_0">' +
+    '<span class="a-price"><span class="a-offscreen">19,99 €</span></span></div>';
+  assert.equal(extractPrice(html, 'https://www.amazon.de/dp/B0DWFMD52T'), null);
+});
+
 test('extracts explicit microdata product prices without relying on domain', () => {
   const html = '<meta itemprop="priceCurrency" content="EUR"><span itemprop="price" content="99.95"></span>';
   assert.equal(extractPrice(html, 'https://example.com/products/item'), 99.95);
