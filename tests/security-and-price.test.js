@@ -121,3 +121,49 @@ test('verified session cannot be used for another email', () => {
   req.headers.authorization += 'changed';
   assert.equal(tokenEmail(req), null);
 });
+
+
+test('Amazon.de reads the current product New-from offer when the buy box is empty', () => {
+  const html = '<html><input id="ASIN" value="B0FH5QDTBQ">' +
+    '<div id="corePriceDisplay_desktop_feature_div">priceNotAvailable</div>' +
+    '<div id="aod-ingress"><a id="aod-ingress-link">Neu (3) ab ' +
+    '<span class="a-price"><span class="a-offscreen">504,38 €</span></span></a></div></html>';
+  assert.equal(extractPrice(html, 'https://www.amazon.de/dp/B0FH5QDTBQ'), 504.38);
+});
+
+test('Amazon.co.uk reads a same-product New-from offer in pounds using a confirmed exchange rate', () => {
+  const html = '<html><input id="ASIN" value="B07BKVY3J1">' +
+    '<div id="aod-ingress">New (3) from ' +
+    '<span class="a-price a-text-price"><span class="a-offscreen">£169.00</span></span>' +
+    '<span class="a-price"><span class="a-offscreen">£149.00</span></span></div></html>';
+  const url = 'https://www.amazon.co.uk/dp/B07BKVY3J1';
+  assert.equal(extractPrice(html, url), null);
+  assert.equal(extractPrice(html, url, { GBP: 0.80 }), 186.25);
+});
+
+test('Amazon main price always wins over another seller offer', () => {
+  const html = '<input id="ASIN" value="B0FH5QDTBQ">' +
+    '<div id="corePriceDisplay_desktop_feature_div">' +
+    '<span class="a-price"><span class="a-offscreen">619,99 €</span></span></div>' +
+    '<div id="aod-ingress">Neu (2) ab ' +
+    '<span class="a-price"><span class="a-offscreen">504,38 €</span></span></div>';
+  assert.equal(extractPrice(html, 'https://www.amazon.de/dp/B0FH5QDTBQ'), 619.99);
+});
+
+test('Amazon rejects unrelated ASIN and unrelated recommendation prices', () => {
+  const url = 'https://www.amazon.de/dp/B0FH5QDTBQ';
+  const other = '<input id="ASIN" value="B07BKVY3J1">' +
+    '<div id="aod-ingress">Neu (3) ab ' +
+    '<span class="a-price"><span class="a-offscreen">29,95 €</span></span></div>';
+  assert.equal(extractPrice(other, url), null);
+  const recommended = '<input id="ASIN" value="B0FH5QDTBQ">' +
+    '<div id="p13n-desktop-sims-fbt_DetailPage_0">Neu (3) ab ' +
+    '<span class="a-price"><span class="a-offscreen">99,95 €</span></span></div>';
+  assert.equal(extractPrice(recommended, url), null);
+});
+
+test('Amazon does not accept an AOD offer from a page without verified product identity', () => {
+  const html = '<div id="aod-ingress">New (3) from ' +
+    '<span class="a-price"><span class="a-offscreen">£99.00</span></span></div>';
+  assert.equal(extractPrice(html, 'https://www.amazon.co.uk/dp/B07BKVY3J1', { GBP: 0.85 }), null);
+});

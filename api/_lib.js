@@ -320,6 +320,71 @@ function pageIsChallenge(html) {
   return /\bcf-chl-[\w-]+\b|\bcdn-cgi\/challenge-platform\b|\bchallenge-form\b|\bhcaptcha\b|\bg-recaptcha\b|<title>\s*(?:access denied|just a moment|attention required|robot check|captcha|403 forbidden)\s*<\/title>|<h[1-3][^>]*>\s*(?:verify you are human|access denied|robot check)\s*<\/h[1-3]>/i.test(html);
 }
 
+// Amazon sometimes shows a price for the watched product only in the
+// "Other sellers / New from" entry on the product page. This entry is an
+// actual offer for the current ASIN; unrelated recommendations are NOT.
+function amazonScopedOfferPrice(html, sourceUrl, rates = {}) {
+  let asin;
+  try {
+    const path = new URL(sourceUrl).pathname;
+    asin = path.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})(?:\/|$)/i)?.[1]?.toUpperCase();
+  } catch { return null; }
+  if (!asin) return null;
+
+  // Require independent confirmation that this HTML is a detail page for
+  // the requested product. A random page containing the ASIN isn't enough.
+  const canonicalTag = html.match(/<link\b[^>]*\brel=["']canonical["'][^>]*>/i)?.[0] ||
+    html.match(/<link\b[^>]*\bhref=["'][^"']+["'][^>]*\brel=["']canonical["'][^>]*>/i)?.[0];
+  const canonicalUrl = canonicalTag?.match(/\bhref=["']([^"']+)["']/i)?.[1];
+  const canonicalAsin = canonicalUrl?.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})(?:\/|[?#]|$)/i)?.[1]?.toUpperCase();
+  if (canonicalAsin && canonicalAsin !== asin) return null;
+  const primaryInputs = [...html.matchAll(/<input\b[^>]*>/gi)]
+    .map(m => m[0])
+    .filter(tag => /\b(?:id|name)=["']ASIN["']/i.test(tag))
+    .map(tag => tag.match(/\bvalue=["']([A-Z0-9]{10})["']/i)?.[1]?.toUpperCase())
+    .filter(Boolean);
+  if (primaryInputs.length && !primaryInputs.includes(asin)) return null;
+  if (canonicalAsin !== asin && !primaryInputs.includes(asin)) return null;
+
+  function elementById(id) {
+    const needle = new RegExp('\\bid\\s*=\\s*["\\x27]' + id + '["\\x27]', 'i');
+    const match = needle.exec(html);
+    if (!match) return null;
+    const start = html.lastIndexOf('<', match.index);
+    if (start < 0 || match.index - start > 500) return null;
+    const opening = /^<([a-z][a-z0-9-]*)\b[^>]*>/i.exec(html.slice(start, start + 800));
+    if (!opening) return null;
+    const tag = opening[1];
+    const token = new RegExp('<\\/?' + tag + '\\b[^>]*>', 'gi');
+    token.lastIndex = start;
+    let depth = 0, part;
+    while ((part = token.exec(html)) && token.lastIndex - start <= 12000) {
+      if (part[0][1] === '/') depth--;
+      else if (!/\/>$/.test(part[0])) depth++;
+      if (depth === 0) return html.slice(start, token.lastIndex);
+    }
+    return null;
+  }
+
+  // Only the offer-entry widget qualifies, never "Frequently bought
+  // together" totals, AOD recommendations or general page-wide numbers.
+  const panel = elementById('aod-ingress') || elementById('aod-ingress-link');
+  if (!panel || !/(?:\bnew\b|\bneu\b|\bfrom\b|\bab\b)/i.test(panel)) return null;
+  const prices = /<span\b[^>]*class=["']([^"']*)["'][^>]*>\s*<span\b[^>]*class=["'][^"']*\ba-offscreen\b[^"']*["'][^>]*>\s*([^<]+)</gi;
+  for (const match of panel.matchAll(prices)) {
+    const classes = match[1].split(/\s+/);
+    if (!classes.includes('a-price') || classes.includes('a-text-price')) continue;
+    const value = match[2];
+    const currency = /(?:€|EUR)/i.test(value) ? 'EUR' :
+      /(?:£|GBP)/i.test(value) ? 'GBP' :
+      /(?:\$|USD)/i.test(value) ? 'USD' : null;
+    if (!currency) continue;
+    const amount = amountInEuros(value, currency, rates);
+    if (amount) return amount;
+  }
+  return null;
+}
+
 function extractPrice(html, sourceUrl = '', rates = {}) {
   if (typeof html !== 'string' || !html) return null;
   let sourceHost = '';
@@ -383,6 +448,13 @@ function extractPrice(html, sourceUrl = '', rates = {}) {
   for (const match of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
     if (!/\btype\s*=\s*["']application\/ld\+json["']/i.test(match[1])) continue;
     try { const v = scan(JSON.parse(match[2].trim())); if (v) return v; } catch {}
+  }
+
+  // Use the watched product's explicitly scoped "New from" offer if its
+  // primary price is absent. Never use a crossed-out or bundle price.
+  if (/(^|\.)amazon\.[a-z.]+$/.test(sourceHost)) {
+    const alt = amazonScopedOfferPrice(html, sourceUrl, rates);
+    if (alt) return alt;
   }
 
   // Amazon pages frequently contain unrelated recommendation prices. Do not
