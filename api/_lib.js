@@ -370,7 +370,7 @@ function amazonScopedOfferPrice(html, sourceUrl, rates = {}) {
   // together" totals, AOD recommendations or general page-wide numbers.
   const panel = elementById('aod-ingress') || elementById('aod-ingress-link');
   if (!panel || !/(?:\bnew\b|\bneu\b|\bfrom\b|\bab\b)/i.test(panel)) return null;
-  const prices = /<span\b[^>]*class=["']([^"']*)["'][^>]*>[\s\S]{0,1200}?<span\b[^>]*class=["'][^"']*\ba-offscreen\b[^"']*["'][^>]*>\s*([^<]+)</gi;
+  const prices = /<span\b[^>]*class=["']([^"']*)["'][^>]*>\s*<span\b[^>]*class=["'][^"']*\ba-offscreen\b[^"']*["'][^>]*>\s*([^<]+)</gi;
   for (const match of panel.matchAll(prices)) {
     const classes = match[1].split(/\s+/);
     if (!classes.includes('a-price') || classes.includes('a-text-price')) continue;
