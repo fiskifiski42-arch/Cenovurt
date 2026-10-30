@@ -1,5 +1,6 @@
 const { isOwner } = require('./_auth');
-const { json, parseBody, normalizeEmail, validEmail, getWatches, setWatches } = require('./_lib');
+const { json, parseBody, normalizeEmail, validEmail, getWatches, setWatches, redis } = require('./_lib');
+const { allowIpRequest } = require('./_rate-limit');
 const { processWatch } = require('./check');
 
 module.exports = async (req, res) => {
@@ -13,6 +14,9 @@ module.exports = async (req, res) => {
     const watches = await getWatches(email);
     const watch = watches.find((w) => w.id === id);
     if (!watch) return json(res, 404, { error: 'Наблюдението не е намерено.' });
+    if (!await allowIpRequest(req, 'check-one', 200, 600)) return json(res, 429, { error: 'Твърде много ръчни проверки. Изчакай малко.' });
+    const lockKey = 'cenovurt:manual-check:' + email + ':' + id;
+    if (!await redis('SET', lockKey, '1', 'EX', '20', 'NX')) return json(res, 429, { error: 'Изчакай 20 секунди преди нова проверка на този продукт.' });
 
     const result = await processWatch(email, watch);
     const latest = await getWatches(email);

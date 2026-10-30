@@ -1,9 +1,11 @@
 const crypto = require('node:crypto');
 const { json, parseBody, validEmail, normalizeEmail, redis } = require('./_lib');
-const { issueToken, oneTimeHash } = require('./_auth');
+const { issueToken, oneTimeHash, sessionCookie, sameOrigin } = require('./_auth');
+const { allowIpRequest } = require('./_rate-limit');
 
 module.exports = async (req, res) => {
   if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
+  if (req.headers?.origin && !sameOrigin(req)) return json(res, 403, { error: 'Forbidden origin' });
   try {
     const body = await parseBody(req);
     const email = normalizeEmail(body.email);
@@ -11,6 +13,7 @@ module.exports = async (req, res) => {
     if (!validEmail(email) || !/^[0-9]{6}$/.test(code)) {
       return json(res, 400, { error: 'Въведи имейл и 6-цифрен код.' });
     }
+    if (!await allowIpRequest(req, 'confirm-login', 35, 600)) return json(res, 429, { error: 'Твърде много опити за вход. Опитай по-късно.' });
     const key = 'cenovurt:login:otp:' + email;
     const triesKey = 'cenovurt:login:tries:' + email;
     const tries = Number(await redis('INCR', triesKey));
@@ -24,7 +27,8 @@ module.exports = async (req, res) => {
     }
     await redis('DEL', key);
     await redis('DEL', triesKey);
-    return json(res, 200, { ok: true, token: issueToken(email), email });
+    res.setHeader('Set-Cookie', sessionCookie(issueToken(email)));
+    return json(res, 200, { ok: true, email });
   } catch (e) {
     return json(res, e.code === 'MISSING_ENV' ? 503 : 500, { error: e.message });
   }

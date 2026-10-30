@@ -1,13 +1,16 @@
 const crypto = require('node:crypto');
 const { json, parseBody, validEmail, normalizeEmail, redis, sendEmail } = require('./_lib');
-const { oneTimeHash } = require('./_auth');
+const { oneTimeHash, sameOrigin } = require('./_auth');
+const { allowIpRequest } = require('./_rate-limit');
 
 module.exports = async (req, res) => {
   if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
+  if (req.headers?.origin && !sameOrigin(req)) return json(res, 403, { error: 'Forbidden origin' });
   try {
     const body = await parseBody(req);
     const email = normalizeEmail(body.email);
     if (!validEmail(email)) return json(res, 400, { error: 'Въведи валиден имейл.' });
+    if (!await allowIpRequest(req, 'login', 20, 600)) return json(res, 429, { error: 'Твърде много заявки за код. Опитай след малко.' });
     const rateKey = 'cenovurt:login:rate:' + email;
     const allowed = await redis('SET', rateKey, '1', 'EX', '60', 'NX');
     if (!allowed) return json(res, 429, { error: 'Код вече е изпратен. Опитай след минута.' });

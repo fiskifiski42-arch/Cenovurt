@@ -14,6 +14,13 @@ lib.getWatches = async () => watches;
 lib.setWatches = async (_, next) => { watches = next; };
 lib.fetchProductPrice = async () => price;
 lib.sendEmail = async () => { sent++; return { id: 'mock' }; };
+const manualLocks = new Set();
+lib.redis = async (cmd, key) => {
+  if (cmd !== 'SET' || !key.startsWith('cenovurt:manual-check:')) throw new Error('Unexpected Redis command in mock');
+  if (manualLocks.has(key)) return null;
+  manualLocks.add(key);
+  return 'OK';
+};
 const manualCheck = require('../api/check-one');
 
 async function runCheck() {
@@ -39,6 +46,10 @@ test('manual check sends notification and deduplicates it', async () => {
   assert.equal(first.data.hit, true);
   assert.equal(first.data.notified, true);
   assert.equal(sent, 1);
+  const tooSoon = await runCheck();
+  assert.equal(tooSoon.status, 429);
+  assert.equal(sent, 1);
+  manualLocks.clear(); // Simulate expiry of the twenty-second Redis cooldown.
   const second = await runCheck();
   assert.equal(second.status, 200);
   assert.equal(second.data.notified, false);
