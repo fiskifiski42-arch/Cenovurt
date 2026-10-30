@@ -110,6 +110,7 @@
 
 <script>
   let account=null,watches=[],demoMode=false,demoWatches=[],authEpoch=0;
+  let pendingLogout=Promise.resolve();
   let sessionToken=localStorage.getItem('cenovurt-session')||'';
   const $=id=>document.getElementById(id);
   const emailEl=$('accountEmail');
@@ -122,7 +123,7 @@
   function esc(v){return String(v??'').replace(/[&<>'"\u0060]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;','\u0060':'&#96;'}[c]))}
   function show(text,err=false,info=false){const box=$('message');box.textContent='';if(!text)return;const n=document.createElement('div');n.className='notice '+(err?'err':info?'info':'');n.textContent=String(text);box.appendChild(n)}
   function currentEmail(){return normalizeEmail(emailEl.value)}
-  async function api(path,opts={}){const headers={'Content-Type':'application/json',...(opts.headers||{})};if(sessionToken)headers.Authorization='Bearer '+sessionToken;const r=await fetch(path,{...opts,headers});const d=await r.json().catch(()=>({}));if(!r.ok){const error=new Error(d.error||'Грешка '+r.status);error.status=r.status;throw error}return d}
+  async function api(path,opts={}){const headers={'Content-Type':'application/json',...(opts.headers||{})};if(sessionToken&&sessionToken!=='cookie')headers.Authorization='Bearer '+sessionToken;const r=await fetch(path,{...opts,headers,credentials:'same-origin'});const d=await r.json().catch(()=>({}));if(!r.ok){const error=new Error(d.error||'Грешка '+r.status);error.status=r.status;throw error}return d}
 
   function renderAccount(){
     $('accountBox').hidden=!account||demoMode;
@@ -179,6 +180,7 @@
   }
   function logout(){
     authEpoch++;
+    pendingLogout=fetch('/api/logout',{method:'POST',credentials:'same-origin'}).catch(()=>show('Не успях да изчистя сървърната сесия. Провери връзката и опитай отново.',true));
     sessionToken='';localStorage.removeItem('cenovurt-session');localStorage.removeItem('cenovurt-email');
     account=null;watches=[];demoMode=false;demoWatches=[];
     emailEl.value='';emailEl.readOnly=false;$('loginCodeBox').hidden=true;$('loginCode').value='';
@@ -187,6 +189,7 @@
   }
 
   async function beginLogin(){
+    await pendingLogout;
     const email=currentEmail();
     if(!validEmail(email))return show('Въведи валиден имейл адрес.',true);
     const epoch=++authEpoch;
@@ -207,7 +210,7 @@
     try{
       const d=await api('/api/confirm-login',{method:'POST',body:JSON.stringify({email,code})});
       if(epoch!==authEpoch||demoMode)return;
-      sessionToken=d.token;localStorage.setItem('cenovurt-session',sessionToken);
+      sessionToken='cookie';localStorage.removeItem('cenovurt-session');
       localStorage.setItem('cenovurt-email',email);
       $('loginCodeBox').hidden=true;$('loginCode').value='';
       if(new URLSearchParams(location.search).has('session_id'))await verifyPayment();
@@ -234,12 +237,13 @@
   }
 
   async function restoreSession(){
-    if(!sessionToken){await verifyPayment();return}
     const tokenAtStart=sessionToken,epoch=authEpoch;
     try{
-      // Verify the saved token on the server before trusting its owner email.
+      // Restore the HttpOnly cookie, or migrate a legacy Bearer token once.
       const d=await api('/api/session');
       if(tokenAtStart!==sessionToken||epoch!==authEpoch||demoMode)return;
+      sessionToken='cookie';
+      localStorage.removeItem('cenovurt-session');
       emailEl.value=d.email;
       localStorage.setItem('cenovurt-email',d.email);
       if(new URLSearchParams(location.search).has('payment'))await verifyPayment();
@@ -249,7 +253,8 @@
       if(e.status===401){
         sessionToken='';localStorage.removeItem('cenovurt-session');
         renderAccount();
-        show('Сесията е изтекла. Имейлът е запазен — нужен е само нов код за вход.',true);
+        if(tokenAtStart)show('Сесията е изтекла. Имейлът е запазен — нужен е само нов код за вход.',true);
+        if(new URLSearchParams(location.search).has('payment'))await verifyPayment();
       }else show('Не успях да възстановя профила: '+e.message,true);
     }
   }
