@@ -21,13 +21,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with: {distribution: 'temurin', java-version: '17'}
-      - uses: android-actions/setup-android@v3
       - name: Android SDK packages
-        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+        run: |
+          yes | sdkmanager --licenses || true
+          sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
       - uses: gradle/actions/setup-gradle@v4
         with: {gradle-version: '8.10.2'}
       - name: Copy shared frontend into Android assets
-        run: cp chefmargin/web/* chefmargin/android/app/src/main/assets/
+        run: mkdir -p chefmargin/android/app/src/main/assets && cp chefmargin/web/* chefmargin/android/app/src/main/assets/
       - name: Build installable Android APK
         working-directory: chefmargin/android
         run: gradle --no-daemon assembleDebug
