@@ -1,7 +1,7 @@
 {
   "name": "chefmargin-portable",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Offline food-cost and menu pricing application for Android and Windows",
   "main": "desktop/main.cjs",
   "scripts": {
@@ -17,12 +17,27 @@
     "appId": "com.chefmargin.portable",
     "productName": "ChefMargin",
     "asar": true,
-    "directories": { "output": "dist" },
-    "files": ["web/**/*", "desktop/main.cjs", "package.json"],
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "web/**/*",
+      "desktop/main.cjs",
+      "package.json"
+    ],
     "win": {
-      "target": [{"target": "portable", "arch": ["x64"]}],
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "artifactName": "ChefMargin-Windows-Portable-${version}-${arch}.${ext}"
     },
-    "portable": {"artifactName": "ChefMargin-Windows-Portable-${version}-${arch}.${ext}"}
+    "portable": {
+      "artifactName": "ChefMargin-Windows-Portable-${version}-${arch}.${ext}"
+    }
   }
 }
