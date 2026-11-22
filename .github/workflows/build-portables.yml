@@ -1,0 +1,56 @@
+name: Build ChefMargin APK and portable EXE
+on:
+  push:
+    branches: [chefmargin-app]
+    paths: ['chefmargin/**', '.github/workflows/build-portables.yml']
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - name: Verify JavaScript calculations
+        run: node --test chefmargin/tests/core.test.cjs
+  android:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: {distribution: 'temurin', java-version: '17'}
+      - uses: android-actions/setup-android@v3
+      - name: Android SDK packages
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.10.2'}
+      - name: Copy shared frontend into Android assets
+        run: cp chefmargin/web/* chefmargin/android/app/src/main/assets/
+      - name: Build installable Android APK
+        working-directory: chefmargin/android
+        run: gradle --no-daemon assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ChefMargin-Android-APK
+          path: chefmargin/android/app/build/outputs/apk/debug/app-debug.apk
+  windows:
+    needs: verify
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - name: Install Electron build dependencies
+        working-directory: chefmargin
+        run: npm install --no-audit --no-fund
+      - name: Build portable Windows EXE
+        working-directory: chefmargin
+        run: npm run build:win
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ChefMargin-Windows-Portable-EXE
+          path: chefmargin/dist/*.exe

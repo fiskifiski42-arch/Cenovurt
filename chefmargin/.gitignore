@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.gradle/
+build/
+*.iml
+*.jks
+*.keystore
+.DS_Store
