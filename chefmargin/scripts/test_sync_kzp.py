@@ -24,6 +24,10 @@ class TestArchive(unittest.TestCase):
   meat=k.parse_row(['10000','Магазин','~3КГ ПИЛЕШКО ФИЛЕ ОХЛАДЕНО','F1','1','6.05',''],'x.csv')
   self.assertEqual(meat[0][1]['qty'],1000)
   self.assertEqual(meat[0][1]['price'],6.05)
+  for title in ['БАНИЦА ВИТА С МАЯ 180ГР', '130Г ОБИКН.БИСКВ.С КРАВЕ МАСЛО', 'МАСЛИНИ ЗЕЛЕНИ С ЧУШКА 4КГ', 'СВИНСКО ФИЛЕ ЖАРЕНО 1КГ']:
+   self.assertEqual(k.parse_row(['10000','Магазин',title,'X','1','6.05',''],'x.csv'),[],title)
+  meat2=k.parse_row(['10000','Магазин','Пилешко филе около 2кг','F2','1','5.29',''],'x.csv')
+  self.assertEqual(meat2[0][1]['qty'],1000)
  def test_reject_unclear_package(self):
   self.assertEqual(k.parse_row(['10000','Магазин','Ориз български','X','1','2.00',''],'x.csv'),[])
 if __name__=='__main__':unittest.main()
