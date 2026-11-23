@@ -30,9 +30,9 @@ RULES = {
  'ONION': (r'\bлук\b|кромид', 'g', r'зелен|пресен|прах|сушен|шалот'),
  'OIL': (r'\bолио\b|слънчогледово масло', 'ml', r'зехтин|кокос|палм|авокадо'),
  'TOM': (r'доматен сос|домати пасирани|пасирани домати', 'g', r'кетчуп|лютеница'),
- 'MOZZ': (r'моцарела|mozzarella', 'g', r'паниран'),
+ 'MOZZ': (r'моцарела|mozzarella', 'g', r'паниран|пюре|спагет|готов|пица|hipp|бебеш|бисквит|сандвич|закуска|салата'),
  'FLOUR': (r'брашно(?:\s|$)|\bflour\b', 'g', r'царевич|оризово|пълнозърнест|ръжено|кокос|бадем'),
- 'YEAST': (r'\bмая\b|\byeast\b', 'g', r'маян|маянски'),
+ 'YEAST': (r'\bмая\b|\byeast\b', 'g', r'маян|маянски|хляб|бисквит|питк|печив|сухар|руло|козунак'),
  'SALT': (r'\bсол\b|\bsalt\b', 'g', r'вана|препарат|соли'),
  'BEEF': (r'телешк(?:а|о|и).*?кайма|говежд(?:а|о|и).*?кайма|кайма.*?телешк', 'g', r'смес|свинск'),
  'BUN': (r'(?:бургер|хамбургер).*?(?:питк|хлебч)|(?:питк|хлебч).*?(?:бургер|хамбургер)', 'pcs', ''),
@@ -40,10 +40,10 @@ RULES = {
  'POTATO': (r'картофи|картоф(?:\s|$)', 'g', r'замраз|фрит|чипс|пюре|бланш|нишесте'),
  'MAYO': (r'майонеза|mayonnaise', 'g', r'сос с майонеза'),
  'EGGS': (r'яйца|яйце', 'pcs', r'шоколад|бонбон'),
- 'BUTTER': (r'краве масло|масло краве', 'g', r'фъстъч|пакетч'),
+ 'BUTTER': (r'краве масло|масло краве', 'g', r'фъстъч|пакетч|бисквит|вафл|сладки|крем|паста|козметик|тесто'),
  'GARLIC': (r'чесън', 'g', r'прах|сушен|гранул'),
- 'TOMATO': (r'домати|домат(?:\s|$)', 'g', r'сушен|консерв|сос|пюре|марин|паста'),
- 'PORK': (r'свинск(?:о|и|а).*?(?:бонфиле|филе|врат|бут)|(?:бонфиле|филе|врат).*?свинск', 'g', r'колбас|шунка|пушен'),
+ 'TOMATO': (r'домати|домат(?:\s|$)', 'g', r'сушен|консерв|сос|пюре|марин|паста|цели|белени|салата|трапез|стерилизирани'),
+ 'PORK': (r'свинск(?:о|и|а).*?(?:бонфиле|филе)|(?:бонфиле|филе).*?свинск', 'g', r'колбас|шунка|пушен|врат|бут'),
  'MILK': (r'прясно мляко|мляко прясно', 'ml', r'бадем|овес|соя|кокос'),
  'YOGURT': (r'кисело мляко', 'g', r'протеинов|напитка'),
  'WHITE_CHEESE': (r'бяло саламурено сирене|краве сирене|сирене краве', 'g', r'топен|крема'),
@@ -51,10 +51,10 @@ RULES = {
  'SUGAR': (r'\bзахар\b', 'g', r'ванилова|пудра|кафява|заместител'),
  'CREAM': (r'готварска сметана|сметана за готвене', 'ml', r'спрей|сладкарска'),
  'OLIVE_OIL': (r'\bзехтин\b|olive oil', 'ml', ''),
- 'PEPPER': (r'\bчушки\b|\bчушка\b', 'g', r'печен|маринован|сушен|пипер'),
+ 'PEPPER': (r'\bчушки\b|\bчушка\b', 'g', r'печен|маринован|сушен|пипер|кашкавал|сирене|пюре|паста|хляб|салата'),
  'CUCUMBER': (r'краставици|краставица', 'g', r'кисели|туршия'),
  'MUSHROOM': (r'гъби печурки|печурки', 'g', r'консерва|сушен'),
- 'CARROT': (r'моркови|морков', 'g', r'сок|маринован'),
+ 'CARROT': (r'моркови|морков', 'g', r'сок|маринован|хляб|пюре|салата|бебеш|супа|спагет|печив'),
  'CHICKEN_LEGS': (r'пилешк(?:о|и|а).*?(?:бут|долно бутче)', 'g', r'пушен|маринован|панир'),
 }
 compiled = {key: (re.compile(pat, re.I), unit, re.compile(ex, re.I) if ex else None) for key, (pat, unit, ex) in RULES.items()}
@@ -75,6 +75,8 @@ def measure(name: str, wanted: str):
         else: kind, qty = 'pcs', val
         if kind == wanted and 0 < qty < 100000: found.append(qty)
     if found:
+        # Approximate variable-weight packs (~3 kg meat, ~10 kg onions) are typically quoted per KG in KZP.
+        if wanted=='g' and re.search(r'~\s*\d+(?:[.,]\d+)?\s*(?:кг|kg)',name,re.I): return 1000
         # Multi-packs containing multiple quantities are ambiguous; do not guess.
         if len(found)>1 and abs(found[0]-found[-1])>0.001: return None
         return found[0]
@@ -121,6 +123,14 @@ def read_archive(binary):
     return grouped, len(files)
 
 
+
+def chain_group(name):
+    n=name.casefold()
+    for marker, key in [('метро','metro'),('metro','metro'),('кауфланд','kaufland'),('kaufland','kaufland'),('лидл','lidl'),('lidl','lidl'),('билла','billa'),('billa','billa'),('т маркет','tmarket'),('фантастико','fantastico'),('минмарт','minimart'),('минимарт','minimart'),('жанет','janet'),('болеро','bolero')]:
+        if marker in n: return key
+    # independent shop: preserve unique name, but collapse numbered branches of same chain
+    return re.sub(r'\d{1,5}', '', n.split(' - ')[0])[:48].strip()
+
 def summarize(grouped, date):
     entries={}
     for key, offers in grouped.items():
@@ -136,11 +146,13 @@ def summarize(grouped, date):
         rows=[r for r in rows if median/4 <= r['perUnit'] <= median*4]
         if rows:
             # Distinct store names + lowest, middle, high observations (avoid 12 same-chain matches)
-            store_list=[];seen=set()
+            store_list=[];seen=set();chaincounts=defaultdict(int)
             for row in rows:
                 storekey=row['store'].casefold()
                 if storekey in seen: continue
-                seen.add(storekey);store_list.append(row)
+                chain = chain_group(row['store'])
+                if chaincounts[chain]>=2: continue
+                seen.add(storekey);chaincounts[chain]+=1;store_list.append(row)
                 if len(store_list)>=MAX_OFFERS:break
             entries[key]=store_list
     return {'version':1,'source':'КЗП · Колко струва','sourceUrl':HOST+'/opendata','sourceDate':date,

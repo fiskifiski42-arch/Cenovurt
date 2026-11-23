@@ -18,6 +18,12 @@ class TestArchive(unittest.TestCase):
   self.assertEqual(grouped['RICE'][0]['price'],2.80)
   self.assertEqual(grouped['MOZZ'][0]['qty'],125)
   self.assertNotIn('POTATO',grouped)
+  self.assertEqual(k.parse_row(['10000','Магазин','БИО ПЮРЕ СПАГЕТИ ДОМАТИ И МОЦАРЕЛА 220Г','M2','1','2.05',''],'x.csv'),[])
+  self.assertEqual(k.parse_row(['10000','Магазин','Пълнозърнест хляб с моркови 500гр','C2','1','2.50',''],'x.csv'),[])
+  self.assertEqual(k.parse_row(['10000','Магазин','130Г БИСКВИТИ С КРАВЕ МАСЛО','B1','1','1.20',''],'x.csv'),[])
+  meat=k.parse_row(['10000','Магазин','~3КГ ПИЛЕШКО ФИЛЕ ОХЛАДЕНО','F1','1','6.05',''],'x.csv')
+  self.assertEqual(meat[0][1]['qty'],1000)
+  self.assertEqual(meat[0][1]['price'],6.05)
  def test_reject_unclear_package(self):
   self.assertEqual(k.parse_row(['10000','Магазин','Ориз български','X','1','2.00',''],'x.csv'),[])
 if __name__=='__main__':unittest.main()
