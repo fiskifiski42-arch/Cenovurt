@@ -1,0 +1,43 @@
+name: Refresh ChefMargin online prices (KZP)
+on:
+  push:
+    branches: [chefmargin-app]
+    paths: ['chefmargin/scripts/sync_kzp.py', '.github/workflows/chefmargin-prices.yml']
+  schedule:
+    - cron: '45 9 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync-prices:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chefmargin-app
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test official archive reader with synthetic CSV
+        run: python -m unittest discover -s chefmargin/scripts -p 'test_*.py'
+      - name: Download recent KZP daily archive and normalize food offers
+        env:
+          CHEFMARGIN_PRICE_OUTPUT: /tmp/chefmargin_prices.json
+        run: python chefmargin/scripts/sync_kzp.py
+      - name: Publish price catalog to read-only branch
+        run: |
+          set -euo pipefail
+          git fetch origin chefmargin-prices
+          git checkout -B chefmargin-prices origin/chefmargin-prices
+          mkdir -p chefmargin-data
+          cp /tmp/chefmargin_prices.json chefmargin-data/prices.json
+          git add chefmargin-data/prices.json
+          if ! git diff --cached --quiet; then
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git config user.name 'github-actions[bot]'
+            git commit -m 'Update official Bulgarian food price observations'
+            git push origin chefmargin-prices
+          fi
